@@ -1,88 +1,183 @@
 const express = require('express');
 const router = express.Router();
-const { Appointment } = require('../models');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
+const appointmentController = require('../controllers/appointmentController');
 
-// Create appointment
-router.post('/', authenticate, async (req, res) => {
-  try {
-    const appointment = new Appointment({
-      ...req.body,
-      patient: req.user.role === 'patient' ? req.user._id : req.body.patient,
-      createdBy: req.user._id
-    });
-    await appointment.save();
-    await appointment.populate('patient doctor', 'firstName lastName phone');
-    res.status(201).json({ success: true, data: appointment });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+/**
+ * @openapi
+ * /api/appointments:
+ *   post:
+ *     summary: Create an appointment request
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [doctor, scheduledDate, scheduledTime, type]
+ *             properties:
+ *               doctor:
+ *                 type: string
+ *               patient:
+ *                 type: string
+ *               scheduledDate:
+ *                 type: string
+ *               scheduledTime:
+ *                 type: string
+ *               type:
+ *                 type: string
+ *               symptoms:
+ *                 type: string
+ *     responses:
+ *       201:
+ *         description: Appointment created successfully
+ */
+router.post('/', authenticate, appointmentController.createAppointment);
 
-// Get my appointments
-router.get('/my-appointments', authenticate, async (req, res) => {
-  try {
-    const query = req.user.role === 'patient' 
-      ? { patient: req.user._id } 
-      : { doctor: req.user._id };
-    
-    const appointments = await Appointment.find(query)
-      .populate('patient doctor', 'firstName lastName phone avatar')
-      .sort({ scheduledDate: -1 });
-    
-    res.json({ success: true, count: appointments.length, data: appointments });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+/**
+ * @openapi
+ * /api/appointments/my-appointments:
+ *   get:
+ *     summary: Get appointments for the current patient or doctor
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Appointments fetched successfully
+ */
+router.get('/my-appointments', authenticate, appointmentController.getMyAppointments);
 
-// Update appointment status (cancel, postpone, refer)
-router.patch('/:id/status', authenticate, async (req, res) => {
-  try {
-    const { status, reason, postponedTo, referredTo } = req.body;
-    const update = { status, updatedBy: req.user._id };
-    
-    if (status === 'cancelled') {
-      update.cancelledBy = req.user._id;
-      update.cancellationReason = reason;
-      update.cancelledAt = new Date();
-    }
-    if (status === 'postponed') {
-      update.postponedTo = postponedTo;
-      update.postponedReason = reason;
-      update.postponedAt = new Date();
-    }
-    if (status === 'referred') {
-      update.referral = { referredTo, reason, status: 'pending' };
-    }
+/**
+ * @openapi
+ * /api/appointments/{id}/video/start:
+ *   post:
+ *     summary: Start a doctor-patient video consultation for an appointment
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Video session started successfully
+ */
+router.post('/:id/video/start', authenticate, appointmentController.startVideoCall);
 
-    const appointment = await Appointment.findByIdAndUpdate(req.params.id, update, { new: true });
-    res.json({ success: true, data: appointment });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+/**
+ * @openapi
+ * /api/appointments/{id}/video/session:
+ *   get:
+ *     summary: Get the current video session details for an appointment
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Video session details retrieved successfully
+ */
+router.get('/:id/video/session', authenticate, appointmentController.getVideoCallSession);
 
-// Join waiting room
-router.post('/:id/join-waiting', authenticate, async (req, res) => {
-  try {
-    const appointment = await Appointment.findById(req.params.id);
-    appointment.status = 'in_waiting_room';
-    appointment.waitingRoom = {
-      joinedAt: new Date(),
-      position: await Appointment.countDocuments({ 
-        doctor: appointment.doctor, 
-        status: 'in_waiting_room',
-        'waitingRoom.joinedAt': { $lt: appointment.waitingRoom?.joinedAt || new Date() }
-      }) + 1,
-      estimatedWaitMinutes: 15,
-      patientsAhead: 2
-    };
-    await appointment.save();
-    res.json({ success: true, data: appointment });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+/**
+ * @openapi
+ * /api/appointments/{id}/video/end:
+ *   post:
+ *     summary: End a doctor-patient video consultation for an appointment
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Video session ended successfully
+ */
+router.post('/:id/video/end', authenticate, appointmentController.endVideoCall);
+
+/**
+ * @openapi
+ * /api/appointments/{id}:
+ *   get:
+ *     summary: View a single appointment by id
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Appointment fetched successfully
+ */
+router.get('/:id', authenticate, appointmentController.getAppointmentById);
+
+/**
+ * @openapi
+ * /api/appointments/{id}:
+ *   put:
+ *     summary: Update an appointment
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Appointment updated successfully
+ */
+router.put('/:id', authenticate, appointmentController.updateAppointment);
+
+/**
+ * @openapi
+ * /api/appointments/{id}:
+ *   delete:
+ *     summary: Delete an appointment
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Appointment deleted successfully
+ */
+router.delete('/:id', authenticate, appointmentController.deleteAppointment);
+
+/**
+ * @openapi
+ * /api/appointments/{id}/status:
+ *   patch:
+ *     summary: Update appointment status, including doctor acceptance or rejection
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [status]
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [confirmed, cancelled, postponed, referred]
+ *               reason:
+ *                 type: string
+ *               postponedTo:
+ *                 type: string
+ *               referredTo:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Appointment status updated
+ */
+router.patch('/:id/status', authenticate, appointmentController.updateAppointmentStatus);
+
+/**
+ * @openapi
+ * /api/appointments/{id}/join-waiting:
+ *   post:
+ *     summary: Join the appointment waiting room
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Waiting room joined successfully
+ */
+router.post('/:id/join-waiting', authenticate, appointmentController.joinWaitingRoom);
 
 module.exports = router;

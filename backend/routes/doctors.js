@@ -1,47 +1,52 @@
 const express = require('express');
 const router = express.Router();
-const { User } = require('../models');
+const doctorController = require('../controllers/doctorController');
 
-// Search doctors
-router.get('/search', async (req, res) => {
-  try {
-    const { specialty, query, minRating, availableNow } = req.query;
-    const filter = { role: 'doctor', 'doctorProfile.isVerified': true };
+/**
+ * @openapi
+ * /api/doctors/search:
+ *   get:
+ *     summary: Search doctors by specialty, query, availability, or rating
+ *     tags: [Doctors]
+ *     parameters:
+ *       - in: query
+ *         name: specialty
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: query
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: minRating
+ *         schema:
+ *           type: number
+ *       - in: query
+ *         name: availableNow
+ *         schema:
+ *           type: boolean
+ *     responses:
+ *       200:
+ *         description: Doctors returned successfully
+ */
+router.get('/search', doctorController.searchDoctors);
 
-    if (specialty) filter['doctorProfile.specialty'] = specialty;
-    if (minRating) filter['doctorProfile.rating'] = { $gte: parseFloat(minRating) };
-    if (availableNow === 'true') filter['doctorProfile.isAvailable'] = true;
-    if (query) {
-      filter.$or = [
-        { firstName: { $regex: query, $options: 'i' } },
-        { lastName: { $regex: query, $options: 'i' } },
-        { 'doctorProfile.specialty': { $regex: query, $options: 'i' } }
-      ];
-    }
-
-    const doctors = await User.find(filter)
-      .select('firstName lastName avatar doctorProfile rating reviewCount')
-      .sort({ 'doctorProfile.rating': -1 });
-
-    res.json({ success: true, count: doctors.length, data: doctors });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
-
-// Get doctor profile
-router.get('/:id', async (req, res) => {
-  try {
-    const doctor = await User.findById(req.params.id)
-      .select('-password')
-      .populate('reviews');
-    if (!doctor || doctor.role !== 'doctor') {
-      return res.status(404).json({ success: false, message: 'Doctor not found' });
-    }
-    res.json({ success: true, data: doctor });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+/**
+ * @openapi
+ * /api/doctors/{id}:
+ *   get:
+ *     summary: Get a doctor profile by id
+ *     tags: [Doctors]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Doctor profile returned successfully
+ */
+router.get('/:id', doctorController.getDoctorProfile);
 
 module.exports = router;

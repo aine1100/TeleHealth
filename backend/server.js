@@ -15,6 +15,7 @@ const errorHandler = require('./middleware/errorHandler');
 const authRoutes = require('./routes/auth');
 const doctorRoutes = require('./routes/doctors');
 const appointmentRoutes = require('./routes/appointments');
+const clinicRoutes = require('./routes/clinics');
 const paymentRoutes = require('./routes/payments');
 const medicineRoutes = require('./routes/medicines');
 const notificationRoutes = require('./routes/notifications');
@@ -22,6 +23,32 @@ const notificationRoutes = require('./routes/notifications');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
+
+io.on('connection', (socket) => {
+  socket.on('join-appointment-room', ({ appointmentId, userId, role }) => {
+    if (!appointmentId) return;
+    const roomName = `appointment-${appointmentId}`;
+    socket.join(roomName);
+    socket.data = { ...socket.data, appointmentId, userId, role };
+    socket.to(roomName).emit('peer-joined', { userId, role });
+  });
+
+  socket.on('offer', ({ appointmentId, offer, senderId }) => {
+    socket.to(`appointment-${appointmentId}`).emit('offer', { offer, senderId });
+  });
+
+  socket.on('answer', ({ appointmentId, answer, senderId }) => {
+    socket.to(`appointment-${appointmentId}`).emit('answer', { answer, senderId });
+  });
+
+  socket.on('ice-candidate', ({ appointmentId, candidate, senderId }) => {
+    socket.to(`appointment-${appointmentId}`).emit('ice-candidate', { candidate, senderId });
+  });
+
+  socket.on('leave-appointment-room', ({ appointmentId }) => {
+    socket.leave(`appointment-${appointmentId}`);
+  });
+});
 
 const swaggerOptions = {
   definition: {
@@ -89,6 +116,7 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/clinics', clinicRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/payments', paymentRoutes);

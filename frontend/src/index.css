@@ -1,22 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap');
-
 :root {
   color-scheme: light;
-  font-family: 'Montserrat', sans-serif;
-  background: #eff6ff;
+  --brand: #0b74ff;
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --surface: #ffffff;
 }
 
 body {
   margin: 0;
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Plus Jakarta Sans', Montserrat, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #eff6ff;
-  color: #0f172a;
+  background: #ffffff;
+  color: var(--ink);
 }
 
 * {
@@ -35,5 +38,32 @@ button {
 }
 
 ::selection {
-  background: rgba(37, 99, 235, 0.2);
+  background: rgba(11, 116, 255, 0.18);
+}
+
+@layer components {
+  .auth-input {
+    @apply w-full rounded-lg border border-ink-200 bg-white px-3.5 py-3 text-sm text-ink-900 outline-none transition placeholder:text-ink-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/10;
+  }
+
+  .auth-label {
+    @apply mb-1.5 block text-sm font-medium text-ink-700;
+  }
+
+  .auth-btn {
+    @apply inline-flex w-full items-center justify-center rounded-lg bg-brand-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-brand-600 focus:outline-none focus:ring-4 focus:ring-brand-500/25 disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .auth-btn-secondary {
+    @apply inline-flex w-full items-center justify-center gap-2 rounded-lg border border-ink-200 bg-white px-4 py-3 text-sm font-semibold text-ink-900 transition hover:bg-ink-100 focus:outline-none focus:ring-4 focus:ring-brand-500/10;
+  }
+
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
 }

@@ -49,6 +49,9 @@ const userSchema = new mongoose.Schema({
     qualifications: [{ type: String }],
     experience: { type: Number }, // years
     hospital: { type: String },
+    clinicId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    inviteAcceptedAt: { type: Date },
     languages: [{ type: String }],
     bio: { type: String },
     consultationFee: { type: Number, default: 25000 },

@@ -13,146 +13,66 @@ const sharedValidation = [
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
 ];
 
+const withForcedRole = (role) => (req, res, next) => {
+  req.forcedRole = role;
+  req.body.role = role;
+  next();
+};
+
 /**
  * @openapi
  * /api/auth/register:
  *   post:
- *     summary: Register a new user
+ *     summary: Register a new patient
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               firstName:
- *                 type: string
- *               lastName:
- *                 type: string
- *               email:
- *                 type: string
- *               phone:
- *                 type: string
- *               password:
- *                 type: string
- *               role:
- *                 type: string
- *     responses:
- *       201:
- *         description: User created successfully
  */
 router.post('/register', sharedValidation, authController.registerUser);
+
 /**
  * @openapi
  * /api/auth/login:
  *   post:
  *     summary: Login a user
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *               password:
- *                 type: string
- *     responses:
- *       200:
- *         description: Login successful, returns access and refresh tokens
  */
 router.post('/login', authController.loginUser);
+
 /**
  * @openapi
  * /api/auth/refresh-token:
  *   post:
  *     summary: Refresh an access token
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               refreshToken:
- *                 type: string
- *     responses:
- *       200:
- *         description: Access token refreshed successfully
  */
 router.post('/refresh-token', authController.refreshToken);
+
 /**
  * @openapi
  * /api/auth/verify-email:
  *   post:
  *     summary: Verify a newly registered account with an OTP
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               email:
- *                 type: string
- *               otp:
- *                 type: string
- *     responses:
- *       200:
- *         description: Email verified successfully
  */
 router.post('/verify-email', authController.verifyEmail);
+
 /**
  * @openapi
  * /api/auth/forgot-password:
  *   post:
  *     summary: Send a password reset OTP by email or phone
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               identifier:
- *                 type: string
- *               channel:
- *                 type: string
- *     responses:
- *       200:
- *         description: Reset OTP sent successfully
  */
 router.post('/forgot-password', authController.forgotPassword);
+
 /**
  * @openapi
  * /api/auth/reset-password:
  *   post:
  *     summary: Reset a password using an OTP
  *     tags: [Auth]
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               identifier:
- *                 type: string
- *               otp:
- *                 type: string
- *               newPassword:
- *                 type: string
- *     responses:
- *       200:
- *         description: Password reset successfully
  */
 router.post('/reset-password', authController.resetPassword);
+
 /**
  * @openapi
  * /api/auth/me:
@@ -161,38 +81,61 @@ router.post('/reset-password', authController.resetPassword);
  *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Current user returned successfully
  */
 router.get('/me', authenticate, authController.getCurrentUser);
-router.post('/register/patient', sharedValidation, (req, res) => {
-  req.body.role = 'patient';
-  return authController.registerUser(req, res);
-});
-router.post('/register/clinic', sharedValidation, upload.array('documents', 5), (req, res) => {
-  req.body.role = 'clinic_admin';
-  return authController.registerUser(req, res);
-});
-router.post('/register/lab', sharedValidation, upload.array('documents', 5), (req, res) => {
-  req.body.role = 'lab_tech';
-  return authController.registerUser(req, res);
-});
-router.post('/register/admin', sharedValidation, authenticate, authorize('admin'), (req, res) => {
-  req.body.role = 'admin';
-  return authController.registerUser(req, res);
-});
-router.post('/register/insurance', sharedValidation, upload.array('documents', 5), (req, res) => {
-  req.body.role = 'insurance';
-  return authController.registerUser(req, res);
-});
-router.get('/organizations/pending', authenticate, authorize('admin'), authController.getPendingOrganizations);
-router.patch('/organizations/:id/review', authenticate, authorize('admin'), authController.reviewOrganization);
-router.post('/login', authController.loginUser);
-router.post('/refresh-token', authController.refreshToken);
-router.post('/verify-email', authController.verifyEmail);
-router.post('/forgot-password', authController.forgotPassword);
-router.post('/reset-password', authController.resetPassword);
-router.get('/me', authenticate, authController.getCurrentUser);
+
+router.post(
+  '/register/patient',
+  sharedValidation,
+  withForcedRole('patient'),
+  authController.registerUser
+);
+
+router.post(
+  '/register/clinic',
+  sharedValidation,
+  upload.array('documents', 5),
+  withForcedRole('clinic_admin'),
+  authController.registerUser
+);
+
+router.post(
+  '/register/lab',
+  sharedValidation,
+  upload.array('documents', 5),
+  withForcedRole('lab_tech'),
+  authController.registerUser
+);
+
+router.post(
+  '/register/admin',
+  sharedValidation,
+  authenticate,
+  authorize('admin'),
+  withForcedRole('admin'),
+  authController.registerUser
+);
+
+router.post(
+  '/register/insurance',
+  sharedValidation,
+  upload.array('documents', 5),
+  withForcedRole('insurance'),
+  authController.registerUser
+);
+
+router.get(
+  '/organizations/pending',
+  authenticate,
+  authorize('admin'),
+  authController.getPendingOrganizations
+);
+
+router.patch(
+  '/organizations/:id/review',
+  authenticate,
+  authorize('admin'),
+  authController.reviewOrganization
+);
 
 module.exports = router;

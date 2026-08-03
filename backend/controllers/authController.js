@@ -1,34 +1,17 @@
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const { validationResult } = require('express-validator');
 const { User, Otp } = require('../models');
 const { buildStorageKey } = require('../services/storageService');
 const { uploadFileToR2 } = require('../services/r2Service');
 const { sendVerificationEmail, sendOtpNotification } = require('../utils/emailService');
+const {
+  signToken,
+  createRefreshToken,
+  createOtp,
+  hashValue,
+  createUserResponse
+} = require('../utils/authTokens');
 
-const signToken = (user, expiresIn = process.env.JWT_EXPIRE || '15m') => {
-  return jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
-    expiresIn
-  });
-};
-
-const createRefreshToken = () => crypto.randomBytes(40).toString('hex');
-const createOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
-const hashValue = (value) => crypto.createHash('sha256').update(value).digest('hex');
-
-const createUserResponse = (user, accessToken, refreshToken) => ({
-  success: true,
-  accessToken,
-  refreshToken,
-  user: {
-    id: user._id,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    email: user.email,
-    phone: user.phone,
-    role: user.role
-  }
-});
+const PUBLIC_REGISTER_ROLES = new Set(['patient']);
 
 const handleValidation = (req, res) => {
   const errors = validationResult(req);
@@ -45,14 +28,55 @@ exports.registerUser = async (req, res) => {
   try {
     const { firstName, lastName, email, phone, password, role = 'patient', ...rest } = req.body;
 
+    if (role === 'doctor') {
+      return res.status(400).json({
+        success: false,
+        message: 'Doctors cannot self-register. Ask your clinic or hospital to send an invite.'
+      });
+    }
+
+    // Role-specific register routes set role explicitly; public /register is patient-only
+    if (!req.forcedRole && !PUBLIC_REGISTER_ROLES.has(role)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role for public registration. Use the dedicated organization register endpoint.'
+      });
+    }
+
+    const resolvedRole = req.forcedRole || role;
+
     const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
     if (existingUser) {
       return res.status(400).json({ success: false, message: 'User already exists' });
     }
 
-    const normalizedBody = { firstName, lastName, email, phone, password, role, ...rest };
+    const parseMaybeJson = (value) => {
+      if (typeof value !== 'string') return value;
+      try {
+        return JSON.parse(value);
+      } catch (error) {
+        return value;
+      }
+    };
 
-    if (['clinic_admin', 'lab_tech', 'insurance'].includes(role) && req.files && req.files.length) {
+    const normalizedBody = {
+      firstName,
+      lastName,
+      email,
+      phone,
+      password,
+      role: resolvedRole,
+      ...rest
+    };
+
+    if (normalizedBody.organizationProfile) {
+      normalizedBody.organizationProfile = parseMaybeJson(normalizedBody.organizationProfile);
+    }
+    if (normalizedBody.clinicProfile) {
+      normalizedBody.clinicProfile = parseMaybeJson(normalizedBody.clinicProfile);
+    }
+
+    if (['clinic_admin', 'lab_tech', 'insurance'].includes(resolvedRole) && req.files && req.files.length) {
       const documents = [];
       for (const file of req.files) {
         const key = buildStorageKey('verification-documents', file.originalname);
@@ -114,11 +138,19 @@ exports.loginUser = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Please verify your email before logging in.' });
     }
 
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is deactivated. Please contact support.'
+      });
+    }
+
     const accessToken = signToken(user);
     const refreshToken = createRefreshToken();
     user.refreshToken = refreshToken;
+    user.lastLogin = new Date();
     await user.save();
-    res.json(createUserResponse(user, accessToken, refreshToken));
+    res.json({ success: true, ...createUserResponse(user, accessToken, refreshToken) });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -137,7 +169,12 @@ exports.verifyEmail = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const otpRecord = await Otp.findOne({ userId: user._id, purpose: 'email_verification', used: false }).sort({ createdAt: -1 });
+    const otpRecord = await Otp.findOne({
+      userId: user._id,
+      purpose: 'email_verification',
+      used: false
+    }).sort({ createdAt: -1 });
+
     if (!otpRecord || otpRecord.expiresAt < new Date()) {
       return res.status(400).json({ success: false, message: 'OTP expired or invalid' });
     }
@@ -175,6 +212,13 @@ exports.refreshToken = async (req, res) => {
     const user = await User.findOne({ refreshToken });
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid refresh token' });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'Account is deactivated. Please contact support.'
+      });
     }
 
     const accessToken = signToken(user);
@@ -228,7 +272,10 @@ exports.resetPassword = async (req, res) => {
   try {
     const { identifier, otp, newPassword } = req.body;
     if (!identifier || !otp || !newPassword) {
-      return res.status(400).json({ success: false, message: 'Identifier, OTP, and new password are required' });
+      return res.status(400).json({
+        success: false,
+        message: 'Identifier, OTP, and new password are required'
+      });
     }
 
     const user = await User.findOne({
@@ -239,7 +286,12 @@ exports.resetPassword = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const otpRecord = await Otp.findOne({ userId: user._id, purpose: 'password_reset', used: false }).sort({ createdAt: -1 });
+    const otpRecord = await Otp.findOne({
+      userId: user._id,
+      purpose: 'password_reset',
+      used: false
+    }).sort({ createdAt: -1 });
+
     if (!otpRecord || otpRecord.expiresAt < new Date()) {
       return res.status(400).json({ success: false, message: 'Reset OTP expired or invalid' });
     }
@@ -294,10 +346,16 @@ exports.reviewOrganization = async (req, res) => {
     }
 
     user.organizationProfile = {
-      ...user.organizationProfile,
+      ...user.organizationProfile?.toObject?.() || user.organizationProfile || {},
       verificationStatus: status,
       verificationNotes: notes || ''
     };
+
+    // Activate approved clinic accounts so they can invite doctors after login
+    if (status === 'approved') {
+      user.isActive = true;
+      user.isEmailVerified = true;
+    }
 
     await user.save();
 
