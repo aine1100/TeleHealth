@@ -58,34 +58,34 @@ mongoose.connect(process.env.MONGODB_URI)
   .catch(err => console.error('❌ MongoDB Error:', err));
 
 // Socket.io for real-time features
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+// io.on('connection', (socket) => {
+//   console.log('User connected:', socket.id);
   
-  socket.on('join-waiting-room', (appointmentId) => {
-    socket.join(`waiting-${appointmentId}`);
-  });
+//   socket.on('join-waiting-room', (appointmentId) => {
+//     socket.join(`waiting-${appointmentId}`);
+//   });
   
-  socket.on('join-video-call', (roomId) => {
-    socket.join(roomId);
-    socket.to(roomId).emit('user-joined', socket.id);
-  });
+//   socket.on('join-video-call', (roomId) => {
+//     socket.join(roomId);
+//     socket.to(roomId).emit('user-joined', socket.id);
+//   });
   
-  socket.on('offer', (data) => {
-    socket.to(data.roomId).emit('offer', data.offer);
-  });
+//   socket.on('offer', (data) => {
+//     socket.to(data.roomId).emit('offer', data.offer);
+//   });
   
-  socket.on('answer', (data) => {
-    socket.to(data.roomId).emit('answer', data.answer);
-  });
+//   socket.on('answer', (data) => {
+//     socket.to(data.roomId).emit('answer', data.answer);
+//   });
   
-  socket.on('ice-candidate', (data) => {
-    socket.to(data.roomId).emit('ice-candidate', data.candidate);
-  });
+//   socket.on('ice-candidate', (data) => {
+//     socket.to(data.roomId).emit('ice-candidate', data.candidate);
+//   });
   
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-  });
-});
+//   socket.on('disconnect', () => {
+//     console.log('User disconnected:', socket.id);
+//   });
+// });
 
 // API Routes
 app.use('/api/auth', authRoutes);

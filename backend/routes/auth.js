@@ -87,6 +87,74 @@ router.post('/login', authController.loginUser);
 router.post('/refresh-token', authController.refreshToken);
 /**
  * @openapi
+ * /api/auth/verify-email:
+ *   post:
+ *     summary: Verify a newly registered account with an OTP
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *               otp:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Email verified successfully
+ */
+router.post('/verify-email', authController.verifyEmail);
+/**
+ * @openapi
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Send a password reset OTP by email or phone
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               identifier:
+ *                 type: string
+ *               channel:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Reset OTP sent successfully
+ */
+router.post('/forgot-password', authController.forgotPassword);
+/**
+ * @openapi
+ * /api/auth/reset-password:
+ *   post:
+ *     summary: Reset a password using an OTP
+ *     tags: [Auth]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               identifier:
+ *                 type: string
+ *               otp:
+ *                 type: string
+ *               newPassword:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Password reset successfully
+ */
+router.post('/reset-password', authController.resetPassword);
+/**
+ * @openapi
  * /api/auth/me:
  *   get:
  *     summary: Get current authenticated user
@@ -122,6 +190,9 @@ router.get('/organizations/pending', authenticate, authorize('admin'), authContr
 router.patch('/organizations/:id/review', authenticate, authorize('admin'), authController.reviewOrganization);
 router.post('/login', authController.loginUser);
 router.post('/refresh-token', authController.refreshToken);
+router.post('/verify-email', authController.verifyEmail);
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password', authController.resetPassword);
 router.get('/me', authenticate, authController.getCurrentUser);
 
 module.exports = router;

@@ -130,11 +130,16 @@ const userSchema = new mongoose.Schema({
   },
   
   // Status
-  isActive: { type: Boolean, default: true },
+  isActive: { type: Boolean, default: false },
   isEmailVerified: { type: Boolean, default: false },
   isPhoneVerified: { type: Boolean, default: false },
   lastLogin: { type: Date },
   refreshToken: { type: String, default: null },
+  otpCode: { type: String, default: null },
+  otpExpiresAt: { type: Date, default: null },
+  resetOtpCode: { type: String, default: null },
+  resetOtpExpiresAt: { type: Date, default: null },
+  resetOtpChannel: { type: String, enum: ['email', 'phone'], default: null },
   
   // Notifications
   notificationSettings: {
