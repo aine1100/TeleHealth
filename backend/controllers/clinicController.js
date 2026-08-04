@@ -140,6 +140,24 @@ exports.getSeatUsage = async (req, res) => {
   }
 };
 
+exports.listClinicDoctors = async (req, res) => {
+  try {
+    const doctors = await clinicService.listClinicDoctors(req.user._id);
+    res.json({ success: true, count: doctors.length, data: doctors });
+  } catch (error) {
+    res.status(getErrorStatus(error)).json({ success: false, message: error.message });
+  }
+};
+
+exports.listClinicPatients = async (req, res) => {
+  try {
+    const patients = await clinicService.listClinicPatients(req.user._id);
+    res.json({ success: true, count: patients.length, data: patients });
+  } catch (error) {
+    res.status(getErrorStatus(error)).json({ success: false, message: error.message });
+  }
+};
+
 exports.getDoctorDetail = async (req, res) => {
   try {
     const data = await clinicService.getDoctorDetail(req.params.doctorId);
@@ -171,6 +189,15 @@ exports.getClinicAppointments = async (req, res) => {
   try {
     const appointments = await clinicService.getClinicAppointments(req.user._id);
     res.json({ success: true, count: appointments.length, data: appointments });
+  } catch (error) {
+    res.status(getErrorStatus(error)).json({ success: false, message: error.message });
+  }
+};
+
+exports.getDashboardOverview = async (req, res) => {
+  try {
+    const overview = await clinicService.getDashboardOverview(req.user._id);
+    res.json({ success: true, data: overview });
   } catch (error) {
     res.status(getErrorStatus(error)).json({ success: false, message: error.message });
   }

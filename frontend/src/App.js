@@ -1,7 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
-import { ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import { Toaster } from 'react-hot-toast';
 
 import Home from './pages/patient/Home';
 import FindDoctor from './pages/patient/FindDoctor';
@@ -195,7 +194,19 @@ function App() {
       <Router>
         <div className="min-h-screen bg-white font-sans text-ink-900">
           <AppRoutes />
-          <ToastContainer position="top-right" theme="colored" />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              duration: 4000,
+              className: 'border border-slate-200 bg-white text-slate-700 shadow-lg',
+              success: {
+                iconTheme: { primary: '#2563eb', secondary: '#fff' }
+              },
+              error: {
+                iconTheme: { primary: '#dc2626', secondary: '#fff' }
+              }
+            }}
+          />
         </div>
       </Router>
     </AuthProvider>

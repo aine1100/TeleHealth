@@ -93,16 +93,16 @@ router.post(
 
 router.post(
   '/register/clinic',
-  sharedValidation,
   upload.array('documents', 5),
+  sharedValidation,
   withForcedRole('clinic_admin'),
   authController.registerUser
 );
 
 router.post(
   '/register/lab',
-  sharedValidation,
   upload.array('documents', 5),
+  sharedValidation,
   withForcedRole('lab_tech'),
   authController.registerUser
 );
@@ -118,8 +118,8 @@ router.post(
 
 router.post(
   '/register/insurance',
-  sharedValidation,
   upload.array('documents', 5),
+  sharedValidation,
   withForcedRole('insurance'),
   authController.registerUser
 );

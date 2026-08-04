@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { toast } from 'react-toastify';
+import { toast } from 'react-hot-toast';
 import AuthLayout from '../../components/auth/AuthLayout';
 import { Alert, TextInput, SubmitButton } from '../../components/auth/FormFields';
 import { useAuth } from '../../context/AuthContext';

@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, Search } from 'lucide-react';
 import StatusFilter from '../../components/clinic/StatusFilter';
-import { clinicPatients, patientStatusOptions } from '../../data/clinicDashboard';
+import { patientStatusOptions } from '../../data/clinicDashboard';
+import { clinicService } from '../../services/clinicService';
 
 const statusStyles = {
   active: 'bg-emerald-50 text-emerald-700',
@@ -12,20 +13,37 @@ const statusStyles = {
 
 const ClinicPatients = () => {
   const navigate = useNavigate();
+  const [patients, setPatients] = useState([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const loadPatients = async () => {
+      try {
+        const response = await clinicService.getPatients();
+        setPatients(response?.data || []);
+      } catch (error) {
+        setPatients([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPatients();
+  }, []);
 
   const counts = useMemo(
     () => ({
-      all: clinicPatients.length,
-      active: clinicPatients.filter((p) => p.status === 'active').length,
-      new: clinicPatients.filter((p) => p.status === 'new').length,
-      inactive: clinicPatients.filter((p) => p.status === 'inactive').length
+      all: patients.length,
+      active: patients.filter((p) => p.status === 'active').length,
+      new: patients.filter((p) => p.status === 'new').length,
+      inactive: patients.filter((p) => p.status === 'inactive').length
     }),
-    []
+    [patients]
   );
 
-  const filtered = clinicPatients.filter((patient) => {
+  const filtered = patients.filter((patient) => {
     const haystack = `${patient.firstName} ${patient.lastName} ${patient.email} ${patient.phone} ${patient.doctor}`.toLowerCase();
     const matchesQuery = haystack.includes(query.toLowerCase());
     const matchesStatus = statusFilter === 'all' || patient.status === statusFilter;
@@ -96,12 +114,19 @@ const ClinicPatients = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((patient) => (
-                <tr
-                  key={patient.id}
-                  className="cursor-pointer border-t border-ink-100 hover:bg-ink-100/40"
-                  onClick={() => navigate(`/clinic/patients/${patient.id}`)}
-                >
+              {loading ? (
+                <tr>
+                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-ink-500">
+                    Loading patients...
+                  </td>
+                </tr>
+              ) : filtered.length ? (
+                filtered.map((patient) => (
+                  <tr
+                    key={patient.id}
+                    className="cursor-pointer border-t border-ink-100 hover:bg-ink-100/40"
+                    onClick={() => navigate(`/clinic/patients/${patient.id}`)}
+                  >
                   <td className="px-4 py-3.5">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ink-100 text-sm font-bold text-ink-700">
@@ -141,15 +166,15 @@ const ClinicPatients = () => {
                       View
                     </button>
                   </td>
-                </tr>
-              ))}
-              {!filtered.length ? (
+                  </tr>
+                ))
+              ) : (
                 <tr>
                   <td colSpan={8} className="px-4 py-10 text-center text-sm text-ink-500">
-                    No patients match your filters.
+                    No patients found.
                   </td>
                 </tr>
-              ) : null}
+              )}
             </tbody>
           </table>
         </div>

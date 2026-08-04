@@ -1,7 +1,15 @@
 const express = require('express');
 const router = express.Router();
+const { body } = require('express-validator');
 const { authenticate, authorize } = require('../middleware/auth');
 const clinicController = require('../controllers/clinicController');
+
+const inviteValidation = [
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('firstName').optional().trim().notEmpty().withMessage('First name cannot be empty'),
+  body('lastName').optional().trim().notEmpty().withMessage('Last name cannot be empty'),
+  body('specialty').optional().trim().notEmpty().withMessage('Specialty cannot be empty')
+];
 
 /**
  * @openapi
@@ -15,7 +23,13 @@ const clinicController = require('../controllers/clinicController');
  *       200:
  *         description: Doctors fetched successfully
  */
-router.get('/doctors', authenticate, authorize('clinic_admin'), clinicController.listDoctors);
+router.post('/doctors/invite', authenticate, authorize('clinic_admin'), inviteValidation, clinicController.inviteDoctor);
+
+router.get('/doctors', authenticate, authorize('clinic_admin'), clinicController.listClinicDoctors);
+
+router.get('/doctors/seats', authenticate, authorize('clinic_admin'), clinicController.getSeatUsage);
+
+router.get('/patients', authenticate, authorize('clinic_admin'), clinicController.listClinicPatients);
 
 /**
  * @openapi
@@ -84,5 +98,7 @@ router.post('/appointments', authenticate, authorize('clinic_admin'), clinicCont
  *         description: Appointments fetched successfully
  */
 router.get('/appointments', authenticate, authorize('clinic_admin'), clinicController.getClinicAppointments);
+
+router.get('/overview', authenticate, authorize('clinic_admin'), clinicController.getDashboardOverview);
 
 module.exports = router;

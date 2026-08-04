@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, Plus, Search, Star } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { toast } from 'react-hot-toast';
 import InviteDoctorModal from '../../components/clinic/InviteDoctorModal';
 import StatusFilter from '../../components/clinic/StatusFilter';
-import { clinicDoctors, doctorStatusOptions } from '../../data/clinicDashboard';
+import { doctorStatusOptions } from '../../data/clinicDashboard';
+import { clinicService } from '../../services/clinicService';
 
 const statusStyles = {
   active: 'bg-emerald-50 text-emerald-700',
@@ -21,12 +22,48 @@ const emptyInvite = {
 
 const ClinicDoctors = () => {
   const navigate = useNavigate();
-  const [doctors, setDoctors] = useState(clinicDoctors);
+  const [doctors, setDoctors] = useState([]);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [modalOpen, setModalOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState(emptyInvite);
+
+  useEffect(() => {
+    const loadDoctors = async () => {
+      try {
+        const response = await clinicService.getDoctors();
+        const items = (response?.data || []).map((doctor) => ({
+          id: doctor._id,
+          firstName: doctor.firstName,
+          lastName: doctor.lastName,
+          email: doctor.email,
+          phone: doctor.phone,
+          specialty: doctor.doctorProfile?.specialty || 'General Practice',
+          licenseNumber: doctor.doctorProfile?.licenseNumber || '—',
+          experience: doctor.doctorProfile?.experience || 0,
+          bio: doctor.doctorProfile?.bio || '',
+          consultationFee: doctor.doctorProfile?.consultationFee || 25000,
+          consultationTypes: doctor.doctorProfile?.consultationTypes || ['video', 'chat'],
+          availableDays: doctor.doctorProfile?.availableDays || [],
+          availableHours: doctor.doctorProfile?.availableHours || { start: '09:00', end: '17:00' },
+          status: doctor.isActive ? 'active' : 'inactive',
+          consultations: 0,
+          rating: doctor.doctorProfile?.rating || null,
+          reviewCount: doctor.doctorProfile?.reviewCount || 0,
+          joined: new Date(doctor.createdAt).toLocaleDateString()
+        }));
+        setDoctors(items);
+      } catch (error) {
+        toast.error(error?.response?.data?.message || 'Unable to load doctors');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadDoctors();
+  }, []);
 
   const counts = useMemo(
     () => ({
@@ -52,17 +89,24 @@ const ClinicDoctors = () => {
     setForm(emptyInvite);
   };
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
     if (!form.email) {
       toast.error('Email is required');
       return;
     }
 
-    setLoading(true);
-    window.setTimeout(() => {
-      const invite = {
-        id: `d-${Date.now()}`,
+    setSubmitting(true);
+    try {
+      await clinicService.inviteDoctor({
+        email: form.email,
+        firstName: form.firstName,
+        lastName: form.lastName,
+        specialty: form.specialty || 'General Practice'
+      });
+
+      const pendingInvite = {
+        id: `invite-${Date.now()}`,
         firstName: form.firstName || 'Invited',
         lastName: form.lastName || 'Doctor',
         email: form.email,
@@ -81,11 +125,15 @@ const ClinicDoctors = () => {
         reviewCount: 0,
         joined: 'Invited just now'
       };
-      setDoctors((prev) => [invite, ...prev]);
-      setLoading(false);
+
+      setDoctors((prev) => [pendingInvite, ...prev]);
       closeModal();
       toast.success(`Invite sent to ${form.email}`);
-    }, 600);
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Unable to send invite');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -161,12 +209,19 @@ const ClinicDoctors = () => {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((doctor) => (
-                <tr
-                  key={doctor.id}
-                  className="cursor-pointer border-t border-ink-100 hover:bg-ink-100/40"
-                  onClick={() => navigate(`/clinic/doctors/${doctor.id}`)}
-                >
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-ink-500">
+                    Loading doctors...
+                  </td>
+                </tr>
+              ) : filtered.length ? (
+                filtered.map((doctor) => (
+                  <tr
+                    key={doctor.id}
+                    className="cursor-pointer border-t border-ink-100 hover:bg-ink-100/40"
+                    onClick={() => navigate(`/clinic/doctors/${doctor.id}`)}
+                  >
                   <td className="px-4 py-3.5">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-sm font-bold text-brand-600">
@@ -212,15 +267,15 @@ const ClinicDoctors = () => {
                       View
                     </button>
                   </td>
-                </tr>
-              ))}
-              {!filtered.length ? (
+                  </tr>
+                ))
+              ) : (
                 <tr>
                   <td colSpan={7} className="px-4 py-10 text-center text-sm text-ink-500">
-                    No doctors match your filters.
+                    No doctors found.
                   </td>
                 </tr>
-              ) : null}
+              )}
             </tbody>
           </table>
         </div>
@@ -233,7 +288,7 @@ const ClinicDoctors = () => {
         onChange={onChange}
         onSpecialtyChange={(value) => setForm((prev) => ({ ...prev, specialty: value }))}
         onSubmit={onSubmit}
-        loading={loading}
+        loading={submitting}
       />
     </div>
   );
