@@ -2,7 +2,8 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 
 exports.signToken = (user, expiresIn = process.env.JWT_EXPIRE || '15m') => {
-  return jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
+  const secret = process.env.JWT_SECRET || 'telehealth-dev-secret';
+  return jwt.sign({ id: user._id, role: user.role }, secret, {
     expiresIn
   });
 };
@@ -22,6 +23,10 @@ exports.createUserResponse = (user, accessToken, refreshToken) => ({
     lastName: user.lastName,
     email: user.email,
     phone: user.phone,
-    role: user.role
+    role: user.role,
+    isActive: user.isActive,
+    isEmailVerified: user.isEmailVerified,
+    organizationProfile: user.organizationProfile || null,
+    clinicProfile: user.clinicProfile || null
   }
 });

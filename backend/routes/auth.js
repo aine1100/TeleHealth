@@ -110,9 +110,28 @@ router.post(
 router.post(
   '/register/admin',
   sharedValidation,
-  authenticate,
-  authorize('admin'),
-  withForcedRole('admin'),
+  async (req, res, next) => {
+    // Bootstrap first super admin when platform has none; otherwise require existing admin auth
+    try {
+      const { User } = require('../models');
+      const adminCount = await User.countDocuments({ role: 'admin' });
+      if (adminCount === 0) {
+        req.forcedRole = 'admin';
+        req.body.role = 'admin';
+        return next();
+      }
+
+      return authenticate(req, res, () =>
+        authorize('admin')(req, res, () => {
+          req.forcedRole = 'admin';
+          req.body.role = 'admin';
+          next();
+        })
+      );
+    } catch (error) {
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  },
   authController.registerUser
 );
 

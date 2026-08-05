@@ -20,6 +20,7 @@ import VerifyEmail from './pages/auth/VerifyEmail';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
 import DoctorSetup from './pages/auth/DoctorSetup';
+import PendingApproval from './pages/auth/PendingApproval';
 import Landing from './pages/Landing';
 import RoleHome from './pages/RoleHome';
 
@@ -31,18 +32,25 @@ import ClinicPatients from './pages/clinic/ClinicPatients';
 import ClinicPatientDetail from './pages/clinic/ClinicPatientDetail';
 import ClinicPlaceholder from './pages/clinic/ClinicPlaceholder';
 
-import { AuthProvider, useAuth } from './context/AuthContext';
+import AdminLayout from './layouts/AdminLayout';
+import AdminOverview from './pages/admin/AdminOverview';
+import AdminOrganizations from './pages/admin/AdminOrganizations';
+import AdminOrganizationDetail from './pages/admin/AdminOrganizationDetail';
+import AdminClinics from './pages/admin/AdminClinics';
+import AdminPatients from './pages/admin/AdminPatients';
+import AdminPatientDetail from './pages/admin/AdminPatientDetail';
 
-const ProtectedRoute = ({ children, roles }) => {
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { isOrganizationApproved, isOrganizationRole } from './utils/orgAccess';
+
+const LoadingScreen = () => (
+  <div className="flex min-h-screen items-center justify-center text-sm text-ink-500">Loading…</div>
+);
+
+const ProtectedRoute = ({ children, roles, requireOrgApproval = false }) => {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-ink-500">
-        Loading…
-      </div>
-    );
-  }
+  if (loading) return <LoadingScreen />;
 
   if (!user) {
     return <Navigate to="/login" replace state={{ from: window.location.pathname }} />;
@@ -50,6 +58,10 @@ const ProtectedRoute = ({ children, roles }) => {
 
   if (roles && !roles.includes(user.role)) {
     return <Navigate to="/" replace />;
+  }
+
+  if (requireOrgApproval && isOrganizationRole(user.role) && !isOrganizationApproved(user)) {
+    return <Navigate to="/pending-approval" replace />;
   }
 
   return children;
@@ -70,6 +82,14 @@ function AppRoutes() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/doctor/setup" element={<DoctorSetup />} />
+      <Route
+        path="/pending-approval"
+        element={
+          <ProtectedRoute roles={['clinic_admin', 'lab_tech', 'insurance']}>
+            <PendingApproval />
+          </ProtectedRoute>
+        }
+      />
 
       <Route
         path="/patient/home"
@@ -86,7 +106,14 @@ function AppRoutes() {
       <Route path="/patient/profile" element={<Profile />} />
       <Route path="/patient/ai-screening" element={<AIScreening />} />
 
-      <Route path="/clinic" element={<ClinicLayout />}>
+      <Route
+        path="/clinic"
+        element={
+          <ProtectedRoute roles={['clinic_admin']} requireOrgApproval>
+            <ClinicLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route path="home" element={<ClinicOverview />} />
         <Route path="doctors" element={<ClinicDoctors />} />
         <Route path="doctors/:doctorId" element={<ClinicDoctorDetail />} />
@@ -141,6 +168,41 @@ function AppRoutes() {
       </Route>
 
       <Route
+        path="/admin"
+        element={
+          <ProtectedRoute roles={['admin']}>
+            <AdminLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="home" element={<AdminOverview />} />
+        <Route path="organizations" element={<AdminOrganizations />} />
+        <Route path="organizations/:orgId" element={<AdminOrganizationDetail />} />
+        <Route path="clinics" element={<AdminClinics />} />
+        <Route path="patients" element={<AdminPatients />} />
+        <Route path="patients/:patientId" element={<AdminPatientDetail />} />
+        <Route
+          path="settings"
+          element={
+            <ClinicPlaceholder
+              title="Settings"
+              description="Platform configuration and admin preferences will sit here."
+            />
+          }
+        />
+        <Route
+          path="support"
+          element={
+            <ClinicPlaceholder
+              title="Support"
+              description="Internal support tools and documentation for the super admin team."
+            />
+          }
+        />
+        <Route index element={<Navigate to="home" replace />} />
+      </Route>
+
+      <Route
         path="/doctor/home"
         element={
           <ProtectedRoute roles={['doctor']}>
@@ -151,7 +213,7 @@ function AppRoutes() {
       <Route
         path="/lab/home"
         element={
-          <ProtectedRoute roles={['lab_tech']}>
+          <ProtectedRoute roles={['lab_tech']} requireOrgApproval>
             <RoleHome title="Lab portal" blurb="Lab orders and results workflows coming next." />
           </ProtectedRoute>
         }
@@ -159,16 +221,8 @@ function AppRoutes() {
       <Route
         path="/insurance/home"
         element={
-          <ProtectedRoute roles={['insurance']}>
+          <ProtectedRoute roles={['insurance']} requireOrgApproval>
             <RoleHome title="Insurance portal" blurb="Claims and coverage tools coming next." />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/home"
-        element={
-          <ProtectedRoute roles={['admin']}>
-            <RoleHome title="Admin portal" blurb="Platform oversight and organization reviews." />
           </ProtectedRoute>
         }
       />

@@ -1,6 +1,5 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { Shield } from 'lucide-react';
+import BrandLogo from '../BrandLogo';
 
 const AuthLayout = ({
   title,
@@ -12,14 +11,7 @@ const AuthLayout = ({
   return (
     <div className="min-h-screen bg-white lg:grid lg:h-screen lg:grid-cols-2 lg:overflow-hidden">
       <div className="scrollbar-hide flex min-h-screen flex-col px-6 py-8 sm:px-10 lg:min-h-0 lg:overflow-y-auto lg:px-16 xl:px-24">
-        <Link to="/" className="inline-flex items-center gap-2.5 self-start">
-          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white shadow-sm shadow-brand-500/30">
-            <Shield className="h-5 w-5" strokeWidth={2.25} />
-          </span>
-          <span className="text-[15px] font-bold tracking-tight text-ink-900">
-            Alive Health UG
-          </span>
-        </Link>
+        <BrandLogo />
 
         <div className={`mx-auto flex w-full max-w-[420px] flex-1 flex-col justify-center py-10 ${panelClassName}`}>
           <div className="animate-fade-up">
@@ -50,6 +42,9 @@ const AuthLayout = ({
         <div className="absolute inset-0 bg-slate-950/55" />
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/35 to-slate-950/20" />
         <div className="absolute bottom-0 left-0 right-0 p-10 text-white">
+          <div className="mb-5">
+            <BrandLogo to={null} inverted showName size="lg" />
+          </div>
           <p className="max-w-md text-2xl font-semibold leading-snug text-white">
             Your health, your choice, your terms.
           </p>

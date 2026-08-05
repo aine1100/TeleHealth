@@ -73,8 +73,33 @@ const authorizeOwnerOrAdmin = (getOwnerId) => {
   };
 };
 
+const ORG_ROLES = ['clinic_admin', 'lab_tech', 'insurance'];
+
+/** Block dashboard APIs until super admin approves the organization */
+const requireApprovedOrganization = (req, res, next) => {
+  if (!ORG_ROLES.includes(req.user.role)) {
+    return next();
+  }
+
+  const status = req.user.organizationProfile?.verificationStatus || 'pending';
+  if (status !== 'approved') {
+    return res.status(403).json({
+      success: false,
+      code: 'ORGANIZATION_NOT_APPROVED',
+      message:
+        status === 'rejected'
+          ? 'Your organization registration was not approved.'
+          : 'Your organization is awaiting super admin approval.',
+      verificationStatus: status
+    });
+  }
+
+  return next();
+};
+
 module.exports = {
   authenticate,
   authorize,
-  authorizeOwnerOrAdmin
+  authorizeOwnerOrAdmin,
+  requireApprovedOrganization
 };

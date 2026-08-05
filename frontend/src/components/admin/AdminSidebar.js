@@ -2,39 +2,30 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Building2,
-  CalendarDays,
   LayoutDashboard,
   LifeBuoy,
-  LineChart,
   LogOut,
   Settings,
-  Stethoscope,
+  ShieldCheck,
   Users,
   X
 } from 'lucide-react';
 import BrandLogo from '../BrandLogo';
 import { useAuth } from '../../context/AuthContext';
-import { clinicNav } from '../../data/clinicDashboard';
+import { adminNav } from '../../data/adminDashboard';
 
 const iconMap = {
   LayoutDashboard,
-  Stethoscope,
-  CalendarDays,
-  Users,
-  LineChart,
+  ShieldCheck,
   Building2,
+  Users,
   Settings,
   LifeBuoy
 };
 
-const ClinicSidebar = ({ open, onClose }) => {
+const AdminSidebar = ({ open, onClose }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-
-  const facilityName =
-    user?.organizationProfile?.organizationName ||
-    user?.clinicProfile?.clinicName ||
-    'Alive Care Hospital';
 
   const handleLogout = () => {
     logout();
@@ -65,7 +56,7 @@ const ClinicSidebar = ({ open, onClose }) => {
         }`}
       >
         <div className="mb-8 flex items-center justify-between px-2">
-          <BrandLogo to="/clinic/home" subtitle="Clinic portal" nameClassName="text-sm" />
+          <BrandLogo to="/admin/home" subtitle="Super admin" nameClassName="text-sm" />
           <button type="button" className="rounded-lg p-1.5 text-ink-500 lg:hidden" onClick={onClose}>
             <X size={18} />
           </button>
@@ -76,7 +67,7 @@ const ClinicSidebar = ({ open, onClose }) => {
             Management
           </p>
           <nav className="space-y-1">
-            {clinicNav.management.map((item) => {
+            {adminNav.management.map((item) => {
               const Icon = iconMap[item.icon];
               return (
                 <NavLink
@@ -84,20 +75,10 @@ const ClinicSidebar = ({ open, onClose }) => {
                   to={item.to}
                   className={linkClass}
                   onClick={onClose}
-                  end={item.to === '/clinic/home'}
+                  end={item.to === '/admin/home'}
                 >
                   <Icon size={17} />
                   <span className="flex-1">{item.label}</span>
-                  {item.badge ? (
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                        // Active link uses white text; keep badge readable on both states
-                        'bg-black/10'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  ) : null}
                 </NavLink>
               );
             })}
@@ -107,7 +88,7 @@ const ClinicSidebar = ({ open, onClose }) => {
             Configurations
           </p>
           <nav className="space-y-1">
-            {clinicNav.configurations.map((item) => {
+            {adminNav.configurations.map((item) => {
               const Icon = iconMap[item.icon];
               return (
                 <NavLink key={item.to} to={item.to} className={linkClass} onClick={onClose}>
@@ -122,14 +103,14 @@ const ClinicSidebar = ({ open, onClose }) => {
         <div className="mt-4 rounded-2xl border border-ink-200 bg-ink-100/70 p-3">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-500 text-sm font-bold text-white">
-              {(user?.firstName?.[0] || 'C')}
+              {(user?.firstName?.[0] || 'S')}
               {(user?.lastName?.[0] || 'A')}
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-ink-900">
-                {user ? `${user.firstName} ${user.lastName}` : 'Clinic Admin'}
+                {user ? `${user.firstName} ${user.lastName}` : 'Super Admin'}
               </p>
-              <p className="truncate text-xs text-ink-500">{facilityName}</p>
+              <p className="truncate text-xs text-ink-500">Platform administrator</p>
             </div>
             <button
               type="button"
@@ -146,4 +127,4 @@ const ClinicSidebar = ({ open, onClose }) => {
   );
 };
 
-export default ClinicSidebar;
+export default AdminSidebar;

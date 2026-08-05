@@ -1,10 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import BrandLogo from '../components/BrandLogo';
 
 const Landing = () => {
-  const { user, roleHome, logout } = useAuth();
+  const { user, resolveHomePath, logout } = useAuth();
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -17,18 +17,13 @@ const Landing = () => {
 
       <div className="relative z-10 mx-auto flex min-h-screen max-w-6xl flex-col px-6 py-8 sm:px-10">
         <header className="flex items-center justify-between">
-          <div className="inline-flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white">
-              <Shield className="h-5 w-5" />
-            </span>
-            <span className="text-lg font-bold text-white">Alive Health UG</span>
-          </div>
+          <BrandLogo inverted nameClassName="text-lg" />
 
           <div className="flex items-center gap-3">
             {user ? (
               <>
                 <Link
-                  to={roleHome(user.role)}
+                  to={resolveHomePath(user)}
                   className="rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-ink-900"
                 >
                   Open dashboard

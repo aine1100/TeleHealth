@@ -76,6 +76,16 @@ exports.registerUser = async (req, res) => {
       normalizedBody.clinicProfile = parseMaybeJson(normalizedBody.clinicProfile);
     }
 
+    // Organizations start pending super-admin review after registration
+    if (['clinic_admin', 'lab_tech', 'insurance'].includes(resolvedRole)) {
+      const orgProfile = normalizedBody.organizationProfile || {};
+      normalizedBody.organizationProfile = {
+        ...orgProfile,
+        verificationStatus: 'pending',
+        verificationNotes: ''
+      };
+    }
+
     if (['clinic_admin', 'lab_tech', 'insurance'].includes(resolvedRole) && req.files && req.files.length) {
       const documents = [];
       for (const file of req.files) {
@@ -91,13 +101,35 @@ exports.registerUser = async (req, res) => {
 
       normalizedBody.organizationProfile = {
         ...(normalizedBody.organizationProfile || {}),
-        verificationDocuments: documents
+        verificationDocuments: documents,
+        verificationStatus: 'pending'
       };
     }
 
     const otpCode = createOtp();
     const user = new User(normalizedBody);
+
+    // Super admins are ready after registration (no org approval gate)
+    if (resolvedRole === 'admin') {
+      user.isEmailVerified = true;
+      user.isActive = true;
+    }
+
     await user.save();
+
+    if (resolvedRole === 'admin') {
+      return res.status(201).json({
+        success: true,
+        message: 'Super admin account created. You can log in now.',
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role
+        }
+      });
+    }
 
     await Otp.create({
       userId: user._id,
@@ -157,7 +189,16 @@ exports.loginUser = async (req, res) => {
 };
 
 exports.getCurrentUser = async (req, res) => {
-  res.json({ success: true, user: req.user });
+  const user = req.user?.toObject ? req.user.toObject() : req.user;
+  res.json({
+    success: true,
+    user: {
+      ...user,
+      id: user?._id || user?.id,
+      password: undefined,
+      refreshToken: undefined
+    }
+  });
 };
 
 exports.verifyEmail = async (req, res) => {
@@ -320,12 +361,9 @@ exports.resetPassword = async (req, res) => {
 
 exports.getPendingOrganizations = async (req, res) => {
   try {
-    const pending = await User.find({
-      role: { $in: ['clinic_admin', 'lab_tech', 'insurance'] },
-      'organizationProfile.verificationStatus': 'pending'
-    }).select('firstName lastName email phone role organizationProfile');
-
-    res.json({ success: true, count: pending.length, data: pending });
+    const adminService = require('../services/adminService');
+    const result = await adminService.listOrganizations({ status: 'pending' });
+    res.json({ success: true, count: result.total, data: result.data });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -333,34 +371,12 @@ exports.getPendingOrganizations = async (req, res) => {
 
 exports.reviewOrganization = async (req, res) => {
   try {
-    const { id } = req.params;
+    const adminService = require('../services/adminService');
     const { status, notes } = req.body;
-
-    if (!['approved', 'rejected'].includes(status)) {
-      return res.status(400).json({ success: false, message: 'Invalid verification status' });
-    }
-
-    const user = await User.findById(id);
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Organization not found' });
-    }
-
-    user.organizationProfile = {
-      ...user.organizationProfile?.toObject?.() || user.organizationProfile || {},
-      verificationStatus: status,
-      verificationNotes: notes || ''
-    };
-
-    // Activate approved clinic accounts so they can invite doctors after login
-    if (status === 'approved') {
-      user.isActive = true;
-      user.isEmailVerified = true;
-    }
-
-    await user.save();
-
-    res.json({ success: true, message: 'Organization verification updated', data: user });
+    const data = await adminService.reviewOrganization(req.params.id, { status, notes });
+    res.json({ success: true, message: 'Organization verification updated', data });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    const status = error.statusCode || 500;
+    res.status(status).json({ success: false, message: error.message });
   }
 };

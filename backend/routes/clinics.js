@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { body } = require('express-validator');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, requireApprovedOrganization } = require('../middleware/auth');
 const clinicController = require('../controllers/clinicController');
 
 const inviteValidation = [
@@ -10,6 +10,22 @@ const inviteValidation = [
   body('lastName').optional().trim().notEmpty().withMessage('Last name cannot be empty'),
   body('specialty').optional().trim().notEmpty().withMessage('Specialty cannot be empty')
 ];
+
+const setupValidation = [
+  body('token').notEmpty().withMessage('Invite token is required'),
+  body('firstName').notEmpty().withMessage('First name is required'),
+  body('lastName').notEmpty().withMessage('Last name is required'),
+  body('phone').notEmpty().withMessage('Phone is required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('specialty').notEmpty().withMessage('Specialty is required'),
+  body('licenseNumber').optional().trim()
+];
+
+const clinicAdmin = [authenticate, authorize('clinic_admin'), requireApprovedOrganization];
+
+// Public doctor invite flows (no clinic dashboard approval required)
+router.get('/doctors/invite/:token', clinicController.getInviteDetails);
+router.post('/doctors/setup', setupValidation, clinicController.setupDoctorAccount);
 
 /**
  * @openapi
@@ -23,13 +39,13 @@ const inviteValidation = [
  *       200:
  *         description: Doctors fetched successfully
  */
-router.post('/doctors/invite', authenticate, authorize('clinic_admin'), inviteValidation, clinicController.inviteDoctor);
+router.post('/doctors/invite', ...clinicAdmin, inviteValidation, clinicController.inviteDoctor);
 
-router.get('/doctors', authenticate, authorize('clinic_admin'), clinicController.listClinicDoctors);
+router.get('/doctors', ...clinicAdmin, clinicController.listClinicDoctors);
 
-router.get('/doctors/seats', authenticate, authorize('clinic_admin'), clinicController.getSeatUsage);
+router.get('/doctors/seats', ...clinicAdmin, clinicController.getSeatUsage);
 
-router.get('/patients', authenticate, authorize('clinic_admin'), clinicController.listClinicPatients);
+router.get('/patients', ...clinicAdmin, clinicController.listClinicPatients);
 
 /**
  * @openapi
@@ -49,7 +65,7 @@ router.get('/patients', authenticate, authorize('clinic_admin'), clinicControlle
  *       200:
  *         description: Doctor details fetched successfully
  */
-router.get('/doctors/:doctorId', authenticate, authorize('clinic_admin'), clinicController.getDoctorDetail);
+router.get('/doctors/:doctorId', ...clinicAdmin, clinicController.getDoctorDetail);
 
 /**
  * @openapi
@@ -83,7 +99,7 @@ router.get('/doctors/:doctorId', authenticate, authorize('clinic_admin'), clinic
  *       201:
  *         description: Appointment created successfully
  */
-router.post('/appointments', authenticate, authorize('clinic_admin'), clinicController.createClinicAppointment);
+router.post('/appointments', ...clinicAdmin, clinicController.createClinicAppointment);
 
 /**
  * @openapi
@@ -97,8 +113,8 @@ router.post('/appointments', authenticate, authorize('clinic_admin'), clinicCont
  *       200:
  *         description: Appointments fetched successfully
  */
-router.get('/appointments', authenticate, authorize('clinic_admin'), clinicController.getClinicAppointments);
+router.get('/appointments', ...clinicAdmin, clinicController.getClinicAppointments);
 
-router.get('/overview', authenticate, authorize('clinic_admin'), clinicController.getDashboardOverview);
+router.get('/overview', ...clinicAdmin, clinicController.getDashboardOverview);
 
 module.exports = router;

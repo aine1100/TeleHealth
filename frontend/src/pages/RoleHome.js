@@ -1,7 +1,7 @@
 import React from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Shield } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import BrandLogo from '../components/BrandLogo';
 
 const RoleHome = ({ title, blurb }) => {
   const navigate = useNavigate();
@@ -16,12 +16,7 @@ const RoleHome = ({ title, blurb }) => {
     <div className="min-h-screen bg-ink-100">
       <header className="border-b border-ink-200 bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <Link to="/" className="inline-flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white">
-              <Shield className="h-5 w-5" />
-            </span>
-            <span className="text-sm font-bold text-ink-900">Alive Health UG</span>
-          </Link>
+          <BrandLogo nameClassName="text-sm" />
           <button
             type="button"
             onClick={handleLogout}

@@ -42,9 +42,21 @@ api.interceptors.response.use(
   (error) => {
     if (error?.response?.status === 401) {
       clearAuthToken();
-      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/clinic')) {
-        window.location.assign('/login');
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
+        if (path.startsWith('/clinic') || path.startsWith('/admin')) {
+          window.location.assign('/login');
+        }
       }
+    }
+
+    if (
+      error?.response?.status === 403 &&
+      error?.response?.data?.code === 'ORGANIZATION_NOT_APPROVED' &&
+      typeof window !== 'undefined' &&
+      !window.location.pathname.startsWith('/pending-approval')
+    ) {
+      window.location.assign('/pending-approval');
     }
 
     return Promise.reject(error);

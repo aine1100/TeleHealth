@@ -1,24 +1,8 @@
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import api, { setAuthToken } from '../services/apiClient';
+import { resolveHomePath, roleHome } from '../utils/orgAccess';
 
 const AuthContext = createContext();
-
-const roleHome = (role) => {
-  switch (role) {
-    case 'doctor':
-      return '/doctor/home';
-    case 'clinic_admin':
-      return '/clinic/home';
-    case 'lab_tech':
-      return '/lab/home';
-    case 'insurance':
-      return '/insurance/home';
-    case 'admin':
-      return '/admin/home';
-    default:
-      return '/patient/home';
-  }
-};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -136,12 +120,12 @@ export const AuthProvider = ({ children }) => {
   };
 
   const setupDoctor = async (payload) => {
-    const res = await api.post('/api/clinic/doctors/setup', payload);
+    const res = await api.post('/api/clinics/doctors/setup', payload);
     return applySession(res.data);
   };
 
   const getDoctorInvite = async (token) => {
-    const res = await api.get(`/api/clinic/doctors/invite/${token}`);
+    const res = await api.get(`/api/clinics/doctors/invite/${token}`);
     return res.data;
   };
 
@@ -168,7 +152,8 @@ export const AuthProvider = ({ children }) => {
         getDoctorInvite,
         logout,
         fetchUser,
-        roleHome
+        roleHome,
+        resolveHomePath
       }}
     >
       {children}

@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, roleHome } = useAuth();
+  const { login, resolveHomePath } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -22,8 +22,14 @@ const Login = () => {
     try {
       const data = await login(form.email, form.password);
       toast.success('Welcome back');
-      const redirect = location.state?.from || roleHome(data.user?.role);
-      navigate(redirect, { replace: true });
+      // Never send unapproved orgs to clinic/lab dashboards
+      const home = resolveHomePath(data.user);
+      const requested = location.state?.from;
+      const allowRequested =
+        requested &&
+        home !== '/pending-approval' &&
+        !String(requested).startsWith('/pending-approval');
+      navigate(allowRequested ? requested : home, { replace: true });
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to log in');
     } finally {

@@ -13,6 +13,7 @@ const errorHandler = require('./middleware/errorHandler');
 
 // Import routes
 const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
 const doctorRoutes = require('./routes/doctors');
 const appointmentRoutes = require('./routes/appointments');
 const clinicRoutes = require('./routes/clinics');
@@ -116,6 +117,7 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/clinics', clinicRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/appointments', appointmentRoutes);
