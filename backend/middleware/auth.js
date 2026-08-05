@@ -89,7 +89,7 @@ const requireApprovedOrganization = (req, res, next) => {
       message:
         status === 'rejected'
           ? 'Your organization registration was not approved.'
-          : 'Your organization is awaiting super admin approval.',
+          : 'Your organization is awaiting super admin approval. You cannot manage doctors or facility operations until approved.',
       verificationStatus: status
     });
   }

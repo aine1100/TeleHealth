@@ -84,6 +84,9 @@ exports.registerUser = async (req, res) => {
         verificationStatus: 'pending',
         verificationNotes: ''
       };
+      // Stay inactive until email is verified (login) or super admin approves (which also verifies)
+      normalizedBody.isActive = false;
+      normalizedBody.isEmailVerified = false;
     }
 
     if (['clinic_admin', 'lab_tech', 'insurance'].includes(resolvedRole) && req.files && req.files.length) {
@@ -166,8 +169,27 @@ exports.loginUser = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
+    const orgRoles = ['clinic_admin', 'lab_tech', 'insurance'];
+    const isOrg = orgRoles.includes(user.role);
+    const orgStatus = user.organizationProfile?.verificationStatus || 'pending';
+
     if (!user.isEmailVerified) {
-      return res.status(403).json({ success: false, message: 'Please verify your email before logging in.' });
+      return res.status(403).json({
+        success: false,
+        code: 'EMAIL_NOT_VERIFIED',
+        message: isOrg
+          ? 'Please verify your email before logging in. Your organization will also need super admin approval before you can manage doctors or operations.'
+          : 'Please verify your email before logging in.',
+        email: user.email
+      });
+    }
+
+    if (isOrg && orgStatus === 'rejected') {
+      return res.status(403).json({
+        success: false,
+        code: 'ORGANIZATION_REJECTED',
+        message: 'Your organization registration was not approved. Contact Alive Health support for help.'
+      });
     }
 
     if (!user.isActive) {
@@ -235,9 +257,26 @@ exports.verifyEmail = async (req, res) => {
 
     user.isEmailVerified = true;
     user.isActive = true;
+    // Organization approval is a separate gate — email verify alone never unlocks ops APIs
+    if (['clinic_admin', 'lab_tech', 'insurance'].includes(user.role)) {
+      if (!user.organizationProfile) user.organizationProfile = {};
+      if (!user.organizationProfile.verificationStatus) {
+        user.organizationProfile.verificationStatus = 'pending';
+        user.markModified('organizationProfile');
+      }
+    }
     await user.save();
 
-    res.json({ success: true, message: 'Email verified successfully' });
+    const isOrg = ['clinic_admin', 'lab_tech', 'insurance'].includes(user.role);
+    const orgStatus = user.organizationProfile?.verificationStatus || 'pending';
+
+    res.json({
+      success: true,
+      message: isOrg && orgStatus !== 'approved'
+        ? 'Email verified. Your organization is pending super admin approval before full access.'
+        : 'Email verified successfully',
+      organizationStatus: isOrg ? orgStatus : undefined
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

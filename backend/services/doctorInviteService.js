@@ -2,7 +2,8 @@ const crypto = require('crypto');
 const { User, DoctorInvite } = require('../models');
 const { sendDoctorInviteEmail } = require('../utils/emailService');
 
-const INVITE_EXPIRY_DAYS = 7;
+/** Invites do not expire while developing / operating without a deadline. */
+const INVITES_NEVER_EXPIRE = true;
 
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
@@ -20,8 +21,20 @@ const assertClinicCanInvite = (clinic) => {
     throw error;
   }
 
-  if (clinic.organizationProfile?.verificationStatus !== 'approved') {
-    const error = new Error('Your organization must be approved before inviting doctors');
+  const verificationStatus = clinic.organizationProfile?.verificationStatus || 'pending';
+  if (verificationStatus !== 'approved') {
+    const error = new Error(
+      verificationStatus === 'rejected'
+        ? 'Your organization registration was rejected. Contact Alive Health support.'
+        : 'Your organization must be approved by a super admin before inviting doctors.'
+    );
+    error.statusCode = 403;
+    error.code = 'ORGANIZATION_NOT_APPROVED';
+    throw error;
+  }
+
+  if (!clinic.isActive) {
+    const error = new Error('Your clinic account is deactivated. Contact Alive Health support.');
     error.statusCode = 403;
     throw error;
   }
@@ -30,29 +43,32 @@ const assertClinicCanInvite = (clinic) => {
 const getDoctorSeatUsage = async (clinicId) => {
   const [activeDoctors, pendingInvites] = await Promise.all([
     User.countDocuments({ role: 'doctor', 'doctorProfile.clinicId': clinicId, isActive: true }),
-    DoctorInvite.countDocuments({ clinicId, status: 'pending', expiresAt: { $gt: new Date() } })
+    DoctorInvite.countDocuments({ clinicId, status: 'pending' })
   ]);
 
   return { activeDoctors, pendingInvites, used: activeDoctors + pendingInvites };
 };
 
 const buildInviteLink = (token) => {
-  const baseUrl = (process.env.PLATFORM_URL || 'http://localhost:3000').replace(/\/$/, '');
+  // Prefer localhost for local development; override with PLATFORM_URL/FRONTEND_URL later
+  const baseUrl = (
+    process.env.PLATFORM_URL ||
+    process.env.FRONTEND_URL ||
+    'http://localhost:3000'
+  ).replace(/\/$/, '');
   return `${baseUrl}/doctor/setup?token=${token}`;
+};
+
+const isInviteExpired = (invite) => {
+  if (INVITES_NEVER_EXPIRE) return false;
+  if (!invite.expiresAt) return false;
+  return new Date(invite.expiresAt) < new Date();
 };
 
 exports.inviteDoctor = async ({ clinic, email, firstName, lastName, specialty }) => {
   assertClinicCanInvite(clinic);
 
   const normalizedEmail = email.toLowerCase().trim();
-  const maxDoctors = clinic.clinicProfile?.maxDoctors || 3;
-  const usage = await getDoctorSeatUsage(clinic._id);
-
-  if (usage.used >= maxDoctors) {
-    const error = new Error(`Doctor limit reached (${maxDoctors}). Upgrade your plan or remove pending invites.`);
-    error.statusCode = 400;
-    throw error;
-  }
 
   const existingUser = await User.findOne({ email: normalizedEmail });
   if (existingUser) {
@@ -68,8 +84,7 @@ exports.inviteDoctor = async ({ clinic, email, firstName, lastName, specialty })
   const existingInvite = await DoctorInvite.findOne({
     clinicId: clinic._id,
     email: normalizedEmail,
-    status: 'pending',
-    expiresAt: { $gt: new Date() }
+    status: 'pending'
   });
 
   if (existingInvite) {
@@ -87,7 +102,7 @@ exports.inviteDoctor = async ({ clinic, email, firstName, lastName, specialty })
     lastName,
     specialty,
     tokenHash: hashToken(token),
-    expiresAt: new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+    expiresAt: null,
     status: 'pending'
   });
 
@@ -100,7 +115,7 @@ exports.inviteDoctor = async ({ clinic, email, firstName, lastName, specialty })
     inviteLink,
     firstName,
     specialty,
-    expiresInDays: INVITE_EXPIRY_DAYS
+    neverExpires: true
   });
 
   return {
@@ -114,7 +129,8 @@ exports.inviteDoctor = async ({ clinic, email, firstName, lastName, specialty })
       expiresAt: invite.expiresAt,
       createdAt: invite.createdAt
     },
-    inviteLink: process.env.NODE_ENV === 'production' ? undefined : inviteLink
+    // Always return link while running localhost so clinic can copy if email is off
+    inviteLink
   };
 };
 
@@ -136,7 +152,8 @@ exports.resendInvite = async ({ clinic, inviteId }) => {
 
   const token = createInviteToken();
   invite.tokenHash = hashToken(token);
-  invite.expiresAt = new Date(Date.now() + INVITE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+  invite.expiresAt = null;
+  invite.status = 'pending';
   await invite.save();
 
   const inviteLink = buildInviteLink(token);
@@ -146,7 +163,7 @@ exports.resendInvite = async ({ clinic, inviteId }) => {
     inviteLink,
     firstName: invite.firstName,
     specialty: invite.specialty,
-    expiresInDays: INVITE_EXPIRY_DAYS
+    neverExpires: true
   });
 
   return {
@@ -156,7 +173,7 @@ exports.resendInvite = async ({ clinic, inviteId }) => {
       status: invite.status,
       expiresAt: invite.expiresAt
     },
-    inviteLink: process.env.NODE_ENV === 'production' ? undefined : inviteLink
+    inviteLink
   };
 };
 
@@ -212,10 +229,23 @@ exports.getInviteByToken = async (token) => {
     throw error;
   }
 
-  if (invite.expiresAt < new Date()) {
+  if (isInviteExpired(invite)) {
     invite.status = 'expired';
     await invite.save();
     const error = new Error('This invite has expired. Ask your clinic to send a new one.');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  // Revive older expired statuses when never-expire mode is on
+  if (invite.status === 'expired' && INVITES_NEVER_EXPIRE) {
+    invite.status = 'pending';
+    invite.expiresAt = null;
+    await invite.save();
+  }
+
+  if (invite.status !== 'pending') {
+    const error = new Error(`Invite is ${invite.status} and cannot be used`);
     error.statusCode = 400;
     throw error;
   }
@@ -228,6 +258,7 @@ exports.getInviteByToken = async (token) => {
     lastName: invite.lastName,
     specialty: invite.specialty,
     expiresAt: invite.expiresAt,
+    neverExpires: INVITES_NEVER_EXPIRE,
     clinic: {
       id: clinic._id,
       name: getClinicDisplayName(clinic),
@@ -261,13 +292,18 @@ exports.setupDoctorAccount = async ({
     throw error;
   }
 
+  if (invite.status === 'expired' && INVITES_NEVER_EXPIRE) {
+    invite.status = 'pending';
+    invite.expiresAt = null;
+  }
+
   if (invite.status !== 'pending') {
     const error = new Error(`Invite is ${invite.status} and cannot be used`);
     error.statusCode = 400;
     throw error;
   }
 
-  if (invite.expiresAt < new Date()) {
+  if (isInviteExpired(invite)) {
     invite.status = 'expired';
     await invite.save();
     const error = new Error('This invite has expired. Ask your clinic to send a new one.');
@@ -291,16 +327,14 @@ exports.setupDoctorAccount = async ({
 
   const existingPhone = await User.findOne({ phone });
   if (existingPhone) {
-    const error = new Error('An account with this phone number already exists');
+    const error = new Error('An account with this phone already exists');
     error.statusCode = 400;
     throw error;
   }
 
-  const clinicName = getClinicDisplayName(clinic);
-
   const doctor = new User({
-    firstName: firstName || invite.firstName,
-    lastName: lastName || invite.lastName,
+    firstName,
+    lastName,
     email: invite.email,
     phone,
     password,
@@ -308,17 +342,16 @@ exports.setupDoctorAccount = async ({
     isActive: true,
     isEmailVerified: true,
     doctorProfile: {
-      specialty: specialty || invite.specialty,
+      specialty: specialty || invite.specialty || 'General Practice',
       licenseNumber,
       qualifications: qualifications || [],
-      experience,
-      hospital: clinicName,
+      experience: experience || 0,
       clinicId: clinic._id,
       invitedBy: invite.invitedBy,
       inviteAcceptedAt: new Date(),
       languages: languages || [],
       bio,
-      consultationFee,
+      consultationFee: consultationFee || 25000,
       consultationTypes: consultationTypes || ['video', 'chat'],
       availableDays: availableDays || ['mon', 'tue', 'wed', 'thu', 'fri'],
       availableHours: availableHours || { start: '09:00', end: '17:00' },
@@ -332,6 +365,7 @@ exports.setupDoctorAccount = async ({
   invite.status = 'accepted';
   invite.acceptedAt = new Date();
   invite.doctorId = doctor._id;
+  invite.expiresAt = null;
   await invite.save();
 
   return doctor;
@@ -349,11 +383,22 @@ exports.listClinicInvites = async (clinicId, status) => {
 
   const invites = await DoctorInvite.find(filter).sort({ createdAt: -1 });
 
-  const now = new Date();
-  for (const invite of invites) {
-    if (invite.status === 'pending' && invite.expiresAt < now) {
-      invite.status = 'expired';
-      await invite.save();
+  // Only auto-expire when expiry is enabled and a date is set
+  if (!INVITES_NEVER_EXPIRE) {
+    const now = new Date();
+    for (const invite of invites) {
+      if (invite.status === 'pending' && invite.expiresAt && invite.expiresAt < now) {
+        invite.status = 'expired';
+        await invite.save();
+      }
+    }
+  } else {
+    for (const invite of invites) {
+      if (invite.status === 'expired') {
+        invite.status = 'pending';
+        invite.expiresAt = null;
+        await invite.save();
+      }
     }
   }
 

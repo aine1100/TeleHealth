@@ -1,20 +1,42 @@
-const { User, Appointment } = require('../models');
+const { User, Appointment, DoctorInvite } = require('../models');
 
-exports.getDoctorDetail = async (doctorId) => {
-  const doctor = await User.findById(doctorId).select('firstName lastName email phone role doctorProfile avatar createdAt');
+exports.getDoctorDetail = async (doctorId, clinicId) => {
+  const doctor = await User.findOne({
+    _id: doctorId,
+    role: 'doctor',
+    ...(clinicId ? { 'doctorProfile.clinicId': clinicId } : {})
+  }).select(
+    'firstName lastName email phone role doctorProfile avatar createdAt isActive isEmailVerified lastLogin'
+  );
 
-  if (!doctor || doctor.role !== 'doctor') {
-    const error = new Error('Doctor not found');
+  if (!doctor) {
+    const error = new Error('Doctor not found in your facility');
     error.statusCode = 404;
     throw error;
   }
 
-  const appointments = await Appointment.find({ doctor: doctorId })
-    .populate('patient', 'firstName lastName email phone avatar')
-    .sort({ scheduledDate: -1 })
-    .limit(10);
+  const [appointments, appointmentsCount, completedCount] = await Promise.all([
+    Appointment.find({ doctor: doctorId, ...(clinicId ? { clinic: clinicId } : {}) })
+      .populate('patient', 'firstName lastName email phone avatar')
+      .sort({ scheduledDate: -1 })
+      .limit(10),
+    Appointment.countDocuments({ doctor: doctorId, ...(clinicId ? { clinic: clinicId } : {}) }),
+    Appointment.countDocuments({
+      doctor: doctorId,
+      status: 'completed',
+      ...(clinicId ? { clinic: clinicId } : {})
+    })
+  ]);
 
-  return { doctor, recentAppointments: appointments };
+  return {
+    doctor,
+    stats: {
+      consultations: appointmentsCount,
+      completed: completedCount,
+      upcoming: Math.max(0, appointmentsCount - completedCount)
+    },
+    recentAppointments: appointments
+  };
 };
 
 exports.createClinicAppointment = async ({ clinicId, doctorId, patientId, scheduledDate, scheduledTime, type, paymentAmount }) => {
@@ -61,16 +83,50 @@ exports.createClinicAppointment = async ({ clinicId, doctorId, patientId, schedu
   return appointment;
 };
 
-exports.getClinicAppointments = async (clinicId) => {
-  return Appointment.find({ clinic: clinicId })
-    .populate('patient doctor', 'firstName lastName phone avatar')
-    .sort({ scheduledDate: -1 });
+exports.getClinicAppointments = async (clinicId, { from, to, status } = {}) => {
+  const filter = { clinic: clinicId };
+
+  if (from || to) {
+    filter.scheduledDate = {};
+    if (from) filter.scheduledDate.$gte = new Date(from);
+    if (to) {
+      const end = new Date(to);
+      end.setHours(23, 59, 59, 999);
+      filter.scheduledDate.$lte = end;
+    }
+  }
+
+  if (status && status !== 'all') {
+    filter.status = status;
+  }
+
+  return Appointment.find(filter)
+    .populate('patient doctor', 'firstName lastName phone avatar email doctorProfile')
+    .sort({ scheduledDate: 1, scheduledTime: 1 });
 };
 
 exports.listClinicDoctors = async (clinicId) => {
   return User.find({ role: 'doctor', 'doctorProfile.clinicId': clinicId })
-    .select('firstName lastName email phone doctorProfile avatar createdAt')
+    .select('firstName lastName email phone doctorProfile avatar createdAt isActive isEmailVerified')
     .sort({ createdAt: -1 });
+};
+
+exports.listClinicTeam = async (clinicId) => {
+  const [doctors, invites] = await Promise.all([
+    exports.listClinicDoctors(clinicId),
+    DoctorInvite.find({ clinicId }).sort({ createdAt: -1 })
+  ]);
+
+  const now = new Date();
+  for (const invite of invites) {
+    // Only auto-expire when an expiresAt is set in the past
+    if (invite.status === 'pending' && invite.expiresAt && invite.expiresAt < now) {
+      invite.status = 'expired';
+      await invite.save();
+    }
+  }
+
+  return { doctors, invites };
 };
 
 exports.listClinicPatients = async (clinicId) => {

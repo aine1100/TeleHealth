@@ -22,7 +22,9 @@ export const adminService = {
 
   getPatients: async (params = {}) => unwrap(await api.get('/api/admin/patients', { params })),
 
-  getPatient: async (id) => unwrap(await api.get(`/api/admin/patients/${id}`))
+  getPatient: async (id) => unwrap(await api.get(`/api/admin/patients/${id}`)),
+
+  submitSupport: async (payload) => unwrap(await api.post('/api/admin/support', payload))
 };
 
 export default adminService;

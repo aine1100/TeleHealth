@@ -29,7 +29,7 @@ const serializeOrganization = (user) => {
     role: doc.role,
     type: mapRoleType(doc.role),
     isActive: doc.isActive,
-    isEmailVerified: doc.isEmailVerified,
+    isEmailVerified: Boolean(doc.isEmailVerified),
     createdAt: doc.createdAt,
     lastLogin: doc.lastLogin,
     organizationName: org.organizationName || clinic.clinicName || `${doc.firstName} ${doc.lastName}`,
@@ -44,7 +44,10 @@ const serializeOrganization = (user) => {
     verificationNotes: org.verificationNotes || '',
     verificationDocuments: org.verificationDocuments || [],
     plan: clinic.plan || null,
-    planStatus: clinic.planStatus || null
+    planStatus: clinic.planStatus || null,
+    // Convenience flags for admin UI
+    canOperate: (org.verificationStatus || 'pending') === 'approved' && Boolean(doc.isActive),
+    needsEmailVerification: !doc.isEmailVerified
   };
 };
 
@@ -55,6 +58,7 @@ exports.getOverview = async () => {
     labsCount,
     insuranceCount,
     pendingOrgs,
+    unverifiedEmailOrgs,
     approvedOrgs,
     rejectedOrgs,
     appointmentsCount,
@@ -75,6 +79,10 @@ exports.getOverview = async () => {
     }),
     User.countDocuments({
       role: { $in: ORG_ROLES },
+      isEmailVerified: { $ne: true }
+    }),
+    User.countDocuments({
+      role: { $in: ORG_ROLES },
       'organizationProfile.verificationStatus': 'approved'
     }),
     User.countDocuments({
@@ -84,13 +92,18 @@ exports.getOverview = async () => {
     Appointment.countDocuments(),
     User.find({ role: { $in: ORG_ROLES } })
       .sort({ createdAt: -1 })
-      .limit(6)
+      .limit(8)
       .select(orgSelect),
     User.find({ role: 'patient' })
       .sort({ createdAt: -1 })
       .limit(6)
       .select(patientSelect)
   ]);
+
+  const statusRank = { pending: 0, rejected: 1, approved: 2 };
+  const sortedRecent = recentOrgs
+    .map(serializeOrganization)
+    .sort((a, b) => (statusRank[a.verificationStatus] ?? 9) - (statusRank[b.verificationStatus] ?? 9));
 
   return {
     stats: {
@@ -99,11 +112,12 @@ exports.getOverview = async () => {
       labs: labsCount,
       insurance: insuranceCount,
       pendingApprovals: pendingOrgs,
+      unverifiedEmails: unverifiedEmailOrgs,
       approvedOrganizations: approvedOrgs,
       rejectedOrganizations: rejectedOrgs,
       appointments: appointmentsCount
     },
-    recentOrganizations: recentOrgs.map(serializeOrganization),
+    recentOrganizations: sortedRecent,
     recentPatients: recentPatients.map((p) => {
       const doc = p.toObject ? p.toObject() : p;
       return {
@@ -165,11 +179,24 @@ exports.listOrganizations = async ({ status, type, q, page = 1, limit = 50 } = {
     User.countDocuments(filter)
   ]);
 
+  const statusRank = { pending: 0, rejected: 1, approved: 2 };
+  const data = rows
+    .map(serializeOrganization)
+    .sort((a, b) => {
+      const rankDiff = (statusRank[a.verificationStatus] ?? 9) - (statusRank[b.verificationStatus] ?? 9);
+      if (rankDiff !== 0) return rankDiff;
+      // Unverified emails float higher within the same approval status
+      if (Boolean(a.isEmailVerified) !== Boolean(b.isEmailVerified)) {
+        return a.isEmailVerified ? 1 : -1;
+      }
+      return 0;
+    });
+
   return {
     total,
     page: Math.max(Number(page), 1),
     limit: take,
-    data: rows.map(serializeOrganization)
+    data
   };
 };
 
@@ -195,25 +222,43 @@ exports.reviewOrganization = async (id, { status, notes }) => {
     throw error;
   }
 
-  const currentOrg = user.organizationProfile?.toObject?.() || user.organizationProfile || {};
+  // Ensure nested profile always exists for reliable admin review
+  if (!user.organizationProfile) {
+    user.organizationProfile = {};
+  }
 
-  user.organizationProfile = {
-    ...currentOrg,
-    verificationStatus: status,
-    verificationNotes: notes || currentOrg.verificationNotes || ''
-  };
+  user.organizationProfile.verificationStatus = status;
+  user.organizationProfile.verificationNotes =
+    notes !== undefined && notes !== null ? notes : user.organizationProfile.verificationNotes || '';
+  user.markModified('organizationProfile');
 
   if (status === 'approved') {
+    // Admin approval unlocks dashboard use even if email OTP was never completed
     user.isActive = true;
+    user.isEmailVerified = true;
+
     if (user.role === 'clinic_admin') {
-      const clinic = user.clinicProfile?.toObject?.() || user.clinicProfile || {};
-      user.clinicProfile = {
-        ...clinic,
-        clinicName: clinic.clinicName || currentOrg.organizationName || user.organizationProfile.organizationName,
-        clinicType: clinic.clinicType || currentOrg.organizationType || 'clinic',
-        registrationNumber: clinic.registrationNumber || currentOrg.registrationNumber,
-        planStatus: clinic.planStatus === 'suspended' ? 'trial' : clinic.planStatus || 'trial'
-      };
+      if (!user.clinicProfile) user.clinicProfile = {};
+      user.clinicProfile.clinicName =
+        user.clinicProfile.clinicName ||
+        user.organizationProfile.organizationName ||
+        `${user.firstName} ${user.lastName}`;
+      user.clinicProfile.clinicType =
+        user.clinicProfile.clinicType || user.organizationProfile.organizationType || 'clinic';
+      user.clinicProfile.registrationNumber =
+        user.clinicProfile.registrationNumber || user.organizationProfile.registrationNumber || '';
+      if (!user.clinicProfile.planStatus || user.clinicProfile.planStatus === 'suspended') {
+        user.clinicProfile.planStatus = 'trial';
+      }
+      user.markModified('clinicProfile');
+    }
+  }
+
+  if (status === 'rejected') {
+    // Keep account recoverable for reviewing the decision after email verify;
+    // dashboard APIs remain blocked via verificationStatus.
+    if (user.isEmailVerified) {
+      user.isActive = true;
     }
   }
 

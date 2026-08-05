@@ -136,6 +136,13 @@ const AdminClinics = () => {
                     <td className="px-4 py-3.5">
                       <p className="font-semibold text-ink-900">{clinic.organizationName}</p>
                       <p className="text-xs text-ink-500">{clinic.email}</p>
+                      <p
+                        className={`mt-1 text-[11px] font-semibold ${
+                          clinic.isEmailVerified ? 'text-emerald-600' : 'text-amber-600'
+                        }`}
+                      >
+                        {clinic.isEmailVerified ? 'Email verified' : 'Email not verified'}
+                      </p>
                     </td>
                     <td className="px-4 py-3.5 text-ink-700">
                       {clinic.firstName} {clinic.lastName}

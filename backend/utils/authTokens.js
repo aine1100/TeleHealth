@@ -26,7 +26,10 @@ exports.createUserResponse = (user, accessToken, refreshToken) => ({
     role: user.role,
     isActive: user.isActive,
     isEmailVerified: user.isEmailVerified,
+    preferredLanguage: user.preferredLanguage || 'en',
     organizationProfile: user.organizationProfile || null,
-    clinicProfile: user.clinicProfile || null
+    clinicProfile: user.clinicProfile || null,
+    doctorProfile: user.doctorProfile || null,
+    notificationSettings: user.notificationSettings || null
   }
 });

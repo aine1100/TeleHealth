@@ -30,7 +30,20 @@ import ClinicDoctors from './pages/clinic/ClinicDoctors';
 import ClinicDoctorDetail from './pages/clinic/ClinicDoctorDetail';
 import ClinicPatients from './pages/clinic/ClinicPatients';
 import ClinicPatientDetail from './pages/clinic/ClinicPatientDetail';
+import ClinicAppointments from './pages/clinic/ClinicAppointments';
+import ClinicFacilityProfile from './pages/clinic/ClinicFacilityProfile';
+import ClinicSettings from './pages/clinic/ClinicSettings';
+import ClinicSupport from './pages/clinic/ClinicSupport';
 import ClinicPlaceholder from './pages/clinic/ClinicPlaceholder';
+
+import DoctorLayout from './layouts/DoctorLayout';
+import DoctorOverview from './pages/doctor/DoctorOverview';
+import DoctorAppointments from './pages/doctor/DoctorAppointments';
+import DoctorPatients from './pages/doctor/DoctorPatients';
+import DoctorProfile from './pages/doctor/DoctorProfile';
+import DoctorSchedule from './pages/doctor/DoctorSchedule';
+import DoctorSettings from './pages/doctor/DoctorSettings';
+import DoctorSupport from './pages/doctor/DoctorSupport';
 
 import AdminLayout from './layouts/AdminLayout';
 import AdminOverview from './pages/admin/AdminOverview';
@@ -39,6 +52,7 @@ import AdminOrganizationDetail from './pages/admin/AdminOrganizationDetail';
 import AdminClinics from './pages/admin/AdminClinics';
 import AdminPatients from './pages/admin/AdminPatients';
 import AdminPatientDetail from './pages/admin/AdminPatientDetail';
+import AdminSupport from './pages/admin/AdminSupport';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { isOrganizationApproved, isOrganizationRole } from './utils/orgAccess';
@@ -117,15 +131,7 @@ function AppRoutes() {
         <Route path="home" element={<ClinicOverview />} />
         <Route path="doctors" element={<ClinicDoctors />} />
         <Route path="doctors/:doctorId" element={<ClinicDoctorDetail />} />
-        <Route
-          path="appointments"
-          element={
-            <ClinicPlaceholder
-              title="Appointments"
-              description="Facility-wide appointment board and waiting room controls will live here."
-            />
-          }
-        />
+        <Route path="appointments" element={<ClinicAppointments />} />
         <Route path="patients" element={<ClinicPatients />} />
         <Route path="patients/:patientId" element={<ClinicPatientDetail />} />
         <Route
@@ -137,33 +143,9 @@ function AppRoutes() {
             />
           }
         />
-        <Route
-          path="profile"
-          element={
-            <ClinicPlaceholder
-              title="Facility profile"
-              description="Update branding, registration details, and plan information here."
-            />
-          }
-        />
-        <Route
-          path="settings"
-          element={
-            <ClinicPlaceholder
-              title="Settings"
-              description="Notification preferences, seats, and access controls will sit here."
-            />
-          }
-        />
-        <Route
-          path="support"
-          element={
-            <ClinicPlaceholder
-              title="Support"
-              description="Reach Alive Health support and browse help resources."
-            />
-          }
-        />
+        <Route path="profile" element={<ClinicFacilityProfile />} />
+        <Route path="settings" element={<ClinicSettings />} />
+        <Route path="support" element={<ClinicSupport />} />
         <Route index element={<Navigate to="home" replace />} />
       </Route>
 
@@ -190,26 +172,27 @@ function AppRoutes() {
             />
           }
         />
-        <Route
-          path="support"
-          element={
-            <ClinicPlaceholder
-              title="Support"
-              description="Internal support tools and documentation for the super admin team."
-            />
-          }
-        />
+        <Route path="support" element={<AdminSupport />} />
         <Route index element={<Navigate to="home" replace />} />
       </Route>
 
       <Route
-        path="/doctor/home"
+        path="/doctor"
         element={
           <ProtectedRoute roles={['doctor']}>
-            <RoleHome title="Doctor portal" blurb="Your consultations and schedule will live here." />
+            <DoctorLayout />
           </ProtectedRoute>
         }
-      />
+      >
+        <Route path="home" element={<DoctorOverview />} />
+        <Route path="appointments" element={<DoctorAppointments />} />
+        <Route path="patients" element={<DoctorPatients />} />
+        <Route path="profile" element={<DoctorProfile />} />
+        <Route path="schedule" element={<DoctorSchedule />} />
+        <Route path="settings" element={<DoctorSettings />} />
+        <Route path="support" element={<DoctorSupport />} />
+        <Route index element={<Navigate to="home" replace />} />
+      </Route>
       <Route
         path="/lab/home"
         element={

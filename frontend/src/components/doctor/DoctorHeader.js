@@ -3,7 +3,7 @@ import { Bell, CalendarDays, ChevronDown, LogOut, Menu, Search, Settings, UserRo
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
-const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actionTo, actionLabel }) => {
+const HeaderMenu = ({ icon: Icon, label, items = [], emptyText, actionTo, actionLabel }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
 
@@ -11,15 +11,8 @@ const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actio
     const onPointerDown = (event) => {
       if (!rootRef.current?.contains(event.target)) setOpen(false);
     };
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
     document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
+    return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
   return (
@@ -36,22 +29,12 @@ const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actio
         }`}
       >
         <Icon size={17} strokeWidth={1.9} />
-        {count > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand-500 px-1 text-[9px] font-bold text-white shadow-sm">
-            {count > 9 ? '9+' : count}
-          </span>
-        ) : null}
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-30 mt-2 w-[300px] overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.1)] animate-fade-up sm:w-[320px]">
-          <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
+        <div className="absolute right-0 z-30 mt-2 w-[300px] overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.1)] animate-fade-up">
+          <div className="border-b border-ink-100 px-4 py-3">
             <p className="text-sm font-bold text-ink-900">{label}</p>
-            {count > 0 ? (
-              <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-600">
-                {count} new
-              </span>
-            ) : null}
           </div>
           <div className="max-h-72 overflow-y-auto">
             {items.length ? (
@@ -80,24 +63,17 @@ const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actio
   );
 };
 
-const ProfileMenu = ({ user, facilityName, onLogout }) => {
+const ProfileMenu = ({ user, specialty, onLogout }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
-  const initials = `${user?.firstName?.[0] || 'C'}${user?.lastName?.[0] || 'A'}`.toUpperCase();
+  const initials = `${user?.firstName?.[0] || 'D'}${user?.lastName?.[0] || 'R'}`.toUpperCase();
 
   useEffect(() => {
     const onPointerDown = (event) => {
       if (!rootRef.current?.contains(event.target)) setOpen(false);
     };
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
     document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
+    return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
   return (
@@ -116,38 +92,35 @@ const ProfileMenu = ({ user, facilityName, onLogout }) => {
         </span>
         <span className="hidden min-w-0 text-left md:block">
           <span className="block max-w-[130px] truncate text-xs font-semibold leading-tight text-ink-900">
-            {user?.firstName} {user?.lastName}
+            Dr. {user?.firstName} {user?.lastName}
           </span>
           <span className="block max-w-[130px] truncate text-[10px] leading-tight text-ink-500">
-            Clinic admin
+            {specialty}
           </span>
         </span>
-        <ChevronDown
-          size={14}
-          className={`mr-0.5 text-ink-400 transition ${open ? 'rotate-180 text-ink-600' : ''}`}
-        />
+        <ChevronDown size={14} className={`mr-0.5 text-ink-400 transition ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open ? (
         <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.1)] animate-fade-up">
           <div className="border-b border-ink-100 bg-ink-50/50 px-4 py-3.5">
             <p className="text-sm font-bold text-ink-900">
-              {user?.firstName} {user?.lastName}
+              Dr. {user?.firstName} {user?.lastName}
             </p>
             <p className="mt-0.5 truncate text-xs text-ink-500">{user?.email}</p>
-            <p className="mt-1.5 truncate text-[11px] font-semibold text-brand-600">{facilityName}</p>
+            <p className="mt-1.5 truncate text-[11px] font-semibold text-brand-600">{specialty}</p>
           </div>
           <div className="p-1.5">
             <Link
-              to="/clinic/profile"
+              to="/doctor/profile"
               onClick={() => setOpen(false)}
               className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-ink-700 hover:bg-ink-50"
             >
               <UserRound size={16} className="text-ink-400" />
-              Facility profile
+              Profile
             </Link>
             <Link
-              to="/clinic/settings"
+              to="/doctor/settings"
               onClick={() => setOpen(false)}
               className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-sm font-medium text-ink-700 hover:bg-ink-50"
             >
@@ -173,17 +146,12 @@ const ProfileMenu = ({ user, facilityName, onLogout }) => {
   );
 };
 
-const ClinicHeader = ({ onMenuClick }) => {
+const DoctorHeader = ({ onMenuClick }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
-
-  const facilityName =
-    user?.organizationProfile?.organizationName ||
-    user?.clinicProfile?.clinicName ||
-    'Your facility';
-
-  const firstName = user?.firstName || 'there';
+  const specialty = user?.doctorProfile?.specialty || 'Care provider';
+  const firstName = user?.firstName || 'Doctor';
 
   const handleLogout = () => {
     logout();
@@ -194,7 +162,7 @@ const ClinicHeader = ({ onMenuClick }) => {
     e.preventDefault();
     const q = search.trim();
     if (!q) return;
-    navigate(`/clinic/doctors?q=${encodeURIComponent(q)}`);
+    navigate(`/doctor/appointments?q=${encodeURIComponent(q)}`);
   };
 
   return (
@@ -212,7 +180,8 @@ const ClinicHeader = ({ onMenuClick }) => {
           <p className="truncate text-[15px] font-bold tracking-tight text-ink-900 sm:text-base">
             Hello, <span className="text-brand-600">{firstName}</span>
           </p>
-           </div>
+        
+        </div>
 
         <form onSubmit={onSearchSubmit} className="relative min-w-0 flex-1">
           <Search
@@ -223,7 +192,7 @@ const ClinicHeader = ({ onMenuClick }) => {
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search doctors, patients, appointments..."
+            placeholder="Search appointments and patients..."
             className="h-10 w-full max-w-xl rounded-full border border-ink-200/80 bg-ink-50/80 py-2 pl-10 pr-4 text-sm text-ink-900 outline-none transition placeholder:text-ink-400 focus:border-brand-300 focus:bg-white focus:ring-4 focus:ring-brand-500/10"
           />
         </form>
@@ -234,21 +203,16 @@ const ClinicHeader = ({ onMenuClick }) => {
             label="Appointments"
             items={[]}
             emptyText="No upcoming appointments"
-            actionTo="/clinic/appointments"
-            actionLabel="View all appointments"
+            actionTo="/doctor/appointments"
+            actionLabel="View schedule"
           />
-          <HeaderMenu
-            icon={Bell}
-            label="Notifications"
-            items={[]}
-            emptyText="You're all caught up"
-          />
+          <HeaderMenu icon={Bell} label="Notifications" items={[]} emptyText="You're all caught up" />
           <div className="ml-0.5 h-6 w-px bg-ink-100 sm:ml-1" />
-          <ProfileMenu user={user} facilityName={facilityName} onLogout={handleLogout} />
+          <ProfileMenu user={user} specialty={specialty} onLogout={handleLogout} />
         </div>
       </div>
     </header>
   );
 };
 
-export default ClinicHeader;
+export default DoctorHeader;

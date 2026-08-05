@@ -65,7 +65,7 @@ const AdminOverview = () => {
       change: data?.stats?.pendingApprovals ? 'Review' : 'Clear',
       positive: !data?.stats?.pendingApprovals,
       detail: 'Orgs waiting',
-      detailSecondary: `${data?.stats?.labs || 0} labs`,
+      detailSecondary: `${data?.stats?.unverifiedEmails || 0} email pending`,
       icon: 'Video',
       tone: 'rose'
     }
@@ -126,15 +126,18 @@ const AdminOverview = () => {
                     <p className="truncate text-sm font-semibold text-ink-900">{org.organizationName}</p>
                     <p className="truncate text-xs text-ink-500">
                       {orgTypeLabel(org.type)} · {org.email}
+                      {!org.isEmailVerified ? ' · email not verified' : ''}
                     </p>
                   </div>
-                  <span
-                    className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${
-                      statusStyles[org.verificationStatus] || statusStyles.pending
-                    }`}
-                  >
-                    {org.verificationStatus}
-                  </span>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${
+                        statusStyles[org.verificationStatus] || statusStyles.pending
+                      }`}
+                    >
+                      {org.verificationStatus}
+                    </span>
+                  </div>
                 </Link>
               ))
             ) : (

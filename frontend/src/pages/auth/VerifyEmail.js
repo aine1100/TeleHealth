@@ -23,8 +23,8 @@ const VerifyEmail = () => {
     setError('');
     setLoading(true);
     try {
-      await verifyEmail(form.email, form.otp);
-      toast.success('Email verified. You can log in now.');
+      const res = await verifyEmail(form.email, form.otp);
+      toast.success(res?.message || 'Email verified. You can log in now.');
       navigate('/login');
     } catch (err) {
       setError(err.response?.data?.message || 'Verification failed');

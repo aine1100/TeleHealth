@@ -90,7 +90,8 @@ const AdminOrganizations = () => {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-ink-900">Organization approvals</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Review and approve clinics, laboratories, and insurance partners before they access their dashboards.
+          Review every clinic, lab, and insurance registration — including accounts that have not
+          verified email yet. Approve before they can invite doctors or run operations.
         </p>
       </div>
 
@@ -177,18 +178,32 @@ const AdminOrganizations = () => {
                     <td className="px-4 py-3.5">
                       <p className="text-ink-700">{org.email}</p>
                       <p className="text-xs text-ink-500">{org.phone}</p>
+                      <p
+                        className={`mt-1 text-[11px] font-semibold ${
+                          org.isEmailVerified ? 'text-emerald-600' : 'text-amber-600'
+                        }`}
+                      >
+                        {org.isEmailVerified ? 'Email verified' : 'Email not verified'}
+                      </p>
                     </td>
                     <td className="px-4 py-3.5 text-ink-700">
                       {org.createdAt ? new Date(org.createdAt).toLocaleDateString() : '—'}
                     </td>
                     <td className="px-4 py-3.5">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${
-                          statusStyles[org.verificationStatus] || statusStyles.pending
-                        }`}
-                      >
-                        {org.verificationStatus}
-                      </span>
+                      <div className="flex flex-col items-start gap-1">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${
+                            statusStyles[org.verificationStatus] || statusStyles.pending
+                          }`}
+                        >
+                          {org.verificationStatus}
+                        </span>
+                        {!org.isEmailVerified ? (
+                          <span className="rounded-full bg-ink-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-ink-500">
+                            OTP pending
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-3.5">
                       <div className="flex flex-wrap items-center gap-2">
@@ -208,6 +223,7 @@ const AdminOrganizations = () => {
                             className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                           >
                             Approve
+                            {!org.isEmailVerified ? ' & activate' : ''}
                           </button>
                         ) : null}
                         {org.verificationStatus !== 'rejected' ? (

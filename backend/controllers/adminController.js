@@ -1,4 +1,6 @@
 const adminService = require('../services/adminService');
+const doctorAccountService = require('../services/doctorAccountService');
+const { validationResult } = require('express-validator');
 
 const handleError = (res, error) => {
   const status = error.statusCode || 500;
@@ -92,6 +94,20 @@ exports.getPatient = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Patient not found' });
     }
     res.json({ success: true, data });
+  } catch (error) {
+    handleError(res, error);
+  }
+};
+
+exports.submitSupport = async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, errors: errors.array() });
+  }
+
+  try {
+    const data = await doctorAccountService.submitSupportRequest(req.user, req.body);
+    res.status(201).json({ success: true, message: 'Support request submitted', data });
   } catch (error) {
     handleError(res, error);
   }

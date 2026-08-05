@@ -86,6 +86,29 @@ const AdminOrganizationDetail = () => {
             <p className="mt-1 text-sm text-ink-500">
               {org.contactPerson} · {org.email} · {org.phone}
             </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${
+                  statusStyles[org.verificationStatus] || statusStyles.pending
+                }`}
+              >
+                Approval: {org.verificationStatus}
+              </span>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  org.isEmailVerified ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+                }`}
+              >
+                {org.isEmailVerified ? 'Email verified' : 'Email not verified'}
+              </span>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  org.isActive ? 'bg-sky-50 text-sky-700' : 'bg-ink-100 text-ink-500'
+                }`}
+              >
+                {org.isActive ? 'Account active' : 'Account inactive'}
+              </span>
+            </div>
           </div>
           <span
             className={`self-start rounded-full px-3 py-1 text-xs font-semibold capitalize ${
@@ -95,6 +118,13 @@ const AdminOrganizationDetail = () => {
             {org.verificationStatus}
           </span>
         </div>
+
+        {!org.isEmailVerified ? (
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            This organization has not completed email OTP verification. Approving them will activate
+            the account and allow login without waiting for the email OTP.
+          </div>
+        ) : null}
 
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           {[
@@ -112,7 +142,15 @@ const AdminOrganizationDetail = () => {
               label: 'Registered',
               value: org.createdAt ? new Date(org.createdAt).toLocaleString() : '—'
             },
-            { label: 'Admin name', value: `${org.firstName} ${org.lastName}` }
+            { label: 'Admin name', value: `${org.firstName} ${org.lastName}` },
+            {
+              label: 'Email verification',
+              value: org.isEmailVerified ? 'Verified' : 'Not verified'
+            },
+            {
+              label: 'Can operate (invite staff)',
+              value: org.canOperate ? 'Yes — approved' : 'No — pending admin approval'
+            }
           ].map((field) => (
             <div key={field.label} className="rounded-xl border border-ink-100 bg-ink-100/40 px-4 py-3">
               <p className="text-xs font-medium text-ink-500">{field.label}</p>
@@ -177,7 +215,7 @@ const AdminOrganizationDetail = () => {
             onClick={() => review('approved')}
             className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
           >
-            Approve organization
+            {org.isEmailVerified ? 'Approve organization' : 'Approve & activate (email too)'}
           </button>
           <button
             type="button"

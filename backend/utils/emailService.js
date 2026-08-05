@@ -77,7 +77,7 @@ exports.sendDoctorInviteEmail = async ({
   inviteLink,
   firstName,
   specialty,
-  expiresInDays = 7
+  neverExpires = true
 }) => {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     console.warn('Email credentials not configured. Doctor invite not sent.');
@@ -100,16 +100,67 @@ exports.sendDoctorInviteEmail = async ({
       <p><strong>${clinicName}</strong> has invited you to join their care team on Alive Health UG.</p>
       ${specialtyLine}
       <p>
-        <a href="${inviteLink}" style="display:inline-block;padding:12px 20px;background:#0047CC;color:#fff;text-decoration:none;border-radius:6px;">
+        <a href="${inviteLink}" style="display:inline-block;padding:12px 20px;background:#0B74FF;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;">
           Set up your doctor account
         </a>
       </p>
       <p>Or copy this link into your browser:</p>
-      <p>${inviteLink}</p>
-      <p>This invite expires in ${expiresInDays} days.</p>
+      <p style="word-break:break-all;">${inviteLink}</p>
+      <p>${neverExpires ? 'This invite does not expire.' : 'Please complete setup soon.'}</p>
     `
   };
 
   await transporter.sendMail(mailOptions);
-  return { success: true };
+  return { success: true, inviteLink };
+};
+
+exports.sendSupportRequestEmail = async ({ fromUser, subject, message, category = 'general' }) => {
+  const reference = `AH-${Date.now().toString(36).toUpperCase()}`;
+  const supportInbox =
+    process.env.SUPPORT_EMAIL || process.env.EMAIL_FROM || process.env.EMAIL_USER;
+
+  const body = `
+    <h3>Support request</h3>
+    <p><strong>Reference:</strong> ${reference}</p>
+    <p><strong>Category:</strong> ${category}</p>
+    <p><strong>Subject:</strong> ${subject}</p>
+    <p><strong>Organization / facility:</strong> ${fromUser.facilityName || '—'}</p>
+    <p><strong>Contact:</strong> ${fromUser.name || '—'} · ${fromUser.email || '—'} · ${fromUser.phone || '—'}</p>
+    <p><strong>Role:</strong> ${fromUser.role || '—'}</p>
+    <hr />
+    <p style="white-space:pre-wrap;">${String(message || '').replace(/</g, '&lt;')}</p>
+  `;
+
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS || !supportInbox) {
+    console.warn('Email credentials not configured. Support request logged only.');
+    console.info(`[Support ${reference}] ${fromUser.email}: ${subject}\n${message}`);
+    return { success: false, message: 'Email credentials not configured', reference };
+  }
+
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM || 'no-reply@alivehealth.ug',
+    to: supportInbox,
+    replyTo: fromUser.email,
+    subject: `[Support ${reference}] ${subject}`,
+    html: body
+  });
+
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_FROM || 'no-reply@alivehealth.ug',
+      to: fromUser.email,
+      subject: `We received your request (${reference})`,
+      html: `
+        <h3>Alive Health UG Support</h3>
+        <p>Hello ${fromUser.name || 'there'},</p>
+        <p>We received your support request and will respond soon.</p>
+        <p><strong>Reference:</strong> ${reference}</p>
+        <p><strong>Subject:</strong> ${subject}</p>
+      `
+    });
+  } catch (err) {
+    console.warn('Support confirmation email failed:', err.message);
+  }
+
+  return { success: true, reference };
 };

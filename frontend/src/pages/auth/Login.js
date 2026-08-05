@@ -31,7 +31,16 @@ const Login = () => {
         !String(requested).startsWith('/pending-approval');
       navigate(allowRequested ? requested : home, { replace: true });
     } catch (err) {
-      setError(err.response?.data?.message || 'Unable to log in');
+      const data = err.response?.data;
+      const message = data?.message || 'Unable to log in';
+      setError(message);
+      if (data?.code === 'EMAIL_NOT_VERIFIED') {
+        toast.error(message);
+        navigate('/verify-email', {
+          replace: false,
+          state: { email: data.email || form.email }
+        });
+      }
     } finally {
       setLoading(false);
     }

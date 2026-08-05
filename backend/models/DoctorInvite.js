@@ -8,7 +8,7 @@ const doctorInviteSchema = new mongoose.Schema({
   lastName: { type: String, trim: true },
   specialty: { type: String, trim: true },
   tokenHash: { type: String, required: true },
-  expiresAt: { type: Date, required: true },
+  expiresAt: { type: Date, default: null },
   status: {
     type: String,
     enum: ['pending', 'accepted', 'cancelled', 'expired'],

@@ -1,9 +1,9 @@
 export const clinicNav = {
   management: [
     { to: '/clinic/home', label: 'Overview', icon: 'LayoutDashboard' },
-    { to: '/clinic/doctors', label: 'Doctors', icon: 'Stethoscope', badge: 5 },
-    { to: '/clinic/appointments', label: 'Appointments', icon: 'CalendarDays', badge: 12 },
-    { to: '/clinic/patients', label: 'Patients', icon: 'Users', badge: 6 },
+    { to: '/clinic/doctors', label: 'Doctors', icon: 'Stethoscope' },
+    { to: '/clinic/appointments', label: 'Appointments', icon: 'CalendarDays' },
+    { to: '/clinic/patients', label: 'Patients', icon: 'Users' },
     { to: '/clinic/insights', label: 'Insights', icon: 'LineChart' }
   ],
   configurations: [

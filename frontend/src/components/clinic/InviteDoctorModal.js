@@ -43,7 +43,7 @@ const InviteDoctorModal = ({ open, onClose, form, onChange, onSpecialtyChange, o
               Invite doctor
             </h2>
             <p className="mt-1 text-sm text-ink-500">
-              Send an email invite. The doctor will set up their own account.
+              Send an email invite. The setup link does not expire — they can join anytime.
             </p>
           </div>
           <button

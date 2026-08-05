@@ -21,6 +21,29 @@ const setupValidation = [
   body('licenseNumber').optional().trim()
 ];
 
+const profileValidation = [
+  body('organizationName').optional().trim().notEmpty().withMessage('Facility name cannot be empty'),
+  body('organizationType')
+    .optional()
+    .isIn(['clinic', 'hospital', 'pharmacy', 'lab', 'insurance_company', 'other'])
+    .withMessage('Invalid facility type'),
+  body('firstName').optional().trim().notEmpty().withMessage('First name cannot be empty'),
+  body('lastName').optional().trim().notEmpty().withMessage('Last name cannot be empty'),
+  body('phone').optional().trim().notEmpty().withMessage('Phone cannot be empty'),
+  body('website').optional({ nullable: true }).isString(),
+  body('address').optional({ nullable: true }).isString(),
+  body('city').optional({ nullable: true }).isString(),
+  body('district').optional({ nullable: true }).isString(),
+  body('registrationNumber').optional({ nullable: true }).isString(),
+  body('contactPerson').optional({ nullable: true }).isString()
+];
+
+const supportValidation = [
+  body('subject').trim().notEmpty().withMessage('Subject is required').isLength({ max: 160 }),
+  body('message').trim().isLength({ min: 10, max: 4000 }).withMessage('Message must be 10–4000 characters'),
+  body('category').optional().trim().isLength({ max: 60 })
+];
+
 const clinicAdmin = [authenticate, authorize('clinic_admin'), requireApprovedOrganization];
 
 // Public doctor invite flows (no clinic dashboard approval required)
@@ -42,6 +65,12 @@ router.post('/doctors/setup', setupValidation, clinicController.setupDoctorAccou
 router.post('/doctors/invite', ...clinicAdmin, inviteValidation, clinicController.inviteDoctor);
 
 router.get('/doctors', ...clinicAdmin, clinicController.listClinicDoctors);
+
+router.get('/doctors/invites', ...clinicAdmin, clinicController.listInvites);
+
+router.post('/doctors/invites/:inviteId/resend', ...clinicAdmin, clinicController.resendInvite);
+
+router.delete('/doctors/invites/:inviteId', ...clinicAdmin, clinicController.cancelInvite);
 
 router.get('/doctors/seats', ...clinicAdmin, clinicController.getSeatUsage);
 
@@ -116,5 +145,10 @@ router.post('/appointments', ...clinicAdmin, clinicController.createClinicAppoin
 router.get('/appointments', ...clinicAdmin, clinicController.getClinicAppointments);
 
 router.get('/overview', ...clinicAdmin, clinicController.getDashboardOverview);
+
+router.get('/profile', ...clinicAdmin, clinicController.getFacilityProfile);
+router.patch('/profile', ...clinicAdmin, profileValidation, clinicController.updateFacilityProfile);
+router.patch('/settings', ...clinicAdmin, clinicController.updateFacilitySettings);
+router.post('/support', ...clinicAdmin, supportValidation, clinicController.submitSupportRequest);
 
 module.exports = router;

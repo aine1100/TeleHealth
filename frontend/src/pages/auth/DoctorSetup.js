@@ -9,7 +9,7 @@ const DoctorSetup = () => {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const token = params.get('token') || '';
-  const { getDoctorInvite, setupDoctor, roleHome } = useAuth();
+  const { getDoctorInvite, setupDoctor } = useAuth();
 
   const [loadingInvite, setLoadingInvite] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -67,7 +67,8 @@ const DoctorSetup = () => {
     try {
       const data = await setupDoctor({ token, ...form });
       toast.success('Doctor account ready');
-      navigate(roleHome(data.user?.role), { replace: true });
+      navigate('/doctor/home', { replace: true });
+      return data;
     } catch (err) {
       setError(err.response?.data?.message || 'Unable to complete setup');
     } finally {

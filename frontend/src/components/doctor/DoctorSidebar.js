@@ -1,40 +1,34 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  Building2,
   CalendarDays,
+  Clock,
   LayoutDashboard,
   LifeBuoy,
-  LineChart,
   LogOut,
   Settings,
-  Stethoscope,
+  UserRound,
   Users,
   X
 } from 'lucide-react';
 import BrandLogo from '../BrandLogo';
 import { useAuth } from '../../context/AuthContext';
-import { clinicNav } from '../../data/clinicDashboard';
+import { doctorNav } from '../../data/doctorDashboard';
 
 const iconMap = {
   LayoutDashboard,
-  Stethoscope,
   CalendarDays,
   Users,
-  LineChart,
-  Building2,
+  Clock,
+  UserRound,
   Settings,
   LifeBuoy
 };
 
-const ClinicSidebar = ({ open, onClose }) => {
+const DoctorSidebar = ({ open, onClose }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-
-  const facilityName =
-    user?.organizationProfile?.organizationName ||
-    user?.clinicProfile?.clinicName ||
-    'Alive Care Hospital';
+  const specialty = user?.doctorProfile?.specialty || 'Doctor portal';
 
   const handleLogout = () => {
     logout();
@@ -65,7 +59,7 @@ const ClinicSidebar = ({ open, onClose }) => {
         }`}
       >
         <div className="mb-8 flex items-center justify-between px-2">
-          <BrandLogo to="/clinic/home" subtitle="Clinic portal" nameClassName="text-sm" />
+          <BrandLogo to="/doctor/home" subtitle="Doctor portal" nameClassName="text-sm" />
           <button type="button" className="rounded-lg p-1.5 text-ink-500 lg:hidden" onClick={onClose}>
             <X size={18} />
           </button>
@@ -76,7 +70,7 @@ const ClinicSidebar = ({ open, onClose }) => {
             Management
           </p>
           <nav className="space-y-1">
-            {clinicNav.management.map((item) => {
+            {doctorNav.management.map((item) => {
               const Icon = iconMap[item.icon];
               return (
                 <NavLink
@@ -84,7 +78,7 @@ const ClinicSidebar = ({ open, onClose }) => {
                   to={item.to}
                   className={linkClass}
                   onClick={onClose}
-                  end={item.to === '/clinic/home'}
+                  end={item.to === '/doctor/home'}
                 >
                   <Icon size={17} />
                   <span>{item.label}</span>
@@ -94,10 +88,10 @@ const ClinicSidebar = ({ open, onClose }) => {
           </nav>
 
           <p className="mb-2 mt-7 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-400">
-            Configurations
+            Account
           </p>
           <nav className="space-y-1">
-            {clinicNav.configurations.map((item) => {
+            {doctorNav.configurations.map((item) => {
               const Icon = iconMap[item.icon];
               return (
                 <NavLink key={item.to} to={item.to} className={linkClass} onClick={onClose}>
@@ -112,14 +106,14 @@ const ClinicSidebar = ({ open, onClose }) => {
         <div className="mt-4 rounded-2xl border border-ink-200 bg-ink-100/70 p-3">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-500 text-sm font-bold text-white">
-              {(user?.firstName?.[0] || 'C')}
-              {(user?.lastName?.[0] || 'A')}
+              {(user?.firstName?.[0] || 'D')}
+              {(user?.lastName?.[0] || 'R')}
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-ink-900">
-                {user ? `${user.firstName} ${user.lastName}` : 'Clinic Admin'}
+                {user ? `Dr. ${user.firstName} ${user.lastName}` : 'Doctor'}
               </p>
-              <p className="truncate text-xs text-ink-500">{facilityName}</p>
+              <p className="truncate text-xs text-ink-500">{specialty}</p>
             </div>
             <button
               type="button"
@@ -136,4 +130,4 @@ const ClinicSidebar = ({ open, onClose }) => {
   );
 };
 
-export default ClinicSidebar;
+export default DoctorSidebar;

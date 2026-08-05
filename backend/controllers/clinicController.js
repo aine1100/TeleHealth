@@ -1,6 +1,7 @@
 const { validationResult } = require('express-validator');
 const doctorInviteService = require('../services/doctorInviteService');
 const clinicService = require('../services/clinicService');
+const clinicProfileService = require('../services/clinicProfileService');
 const { signToken, createRefreshToken, createUserResponse } = require('../utils/authTokens');
 
 const handleValidation = (req, res) => {
@@ -126,13 +127,13 @@ exports.listInvites = async (req, res) => {
 exports.getSeatUsage = async (req, res) => {
   try {
     const usage = await doctorInviteService.getDoctorSeatUsage(req.user._id);
-    const maxDoctors = req.user.clinicProfile?.maxDoctors || 3;
     res.json({
       success: true,
       data: {
         ...usage,
-        maxDoctors,
-        remaining: Math.max(0, maxDoctors - usage.used)
+        unlimited: true,
+        maxDoctors: null,
+        remaining: null
       }
     });
   } catch (error) {
@@ -142,8 +143,14 @@ exports.getSeatUsage = async (req, res) => {
 
 exports.listClinicDoctors = async (req, res) => {
   try {
-    const doctors = await clinicService.listClinicDoctors(req.user._id);
-    res.json({ success: true, count: doctors.length, data: doctors });
+    const team = await clinicService.listClinicTeam(req.user._id);
+    res.json({
+      success: true,
+      count: team.doctors.length,
+      inviteCount: team.invites.length,
+      data: team.doctors,
+      invites: team.invites
+    });
   } catch (error) {
     res.status(getErrorStatus(error)).json({ success: false, message: error.message });
   }
@@ -160,7 +167,7 @@ exports.listClinicPatients = async (req, res) => {
 
 exports.getDoctorDetail = async (req, res) => {
   try {
-    const data = await clinicService.getDoctorDetail(req.params.doctorId);
+    const data = await clinicService.getDoctorDetail(req.params.doctorId, req.user._id);
     res.json({ success: true, data });
   } catch (error) {
     res.status(getErrorStatus(error)).json({ success: false, message: error.message });
@@ -187,7 +194,11 @@ exports.createClinicAppointment = async (req, res) => {
 
 exports.getClinicAppointments = async (req, res) => {
   try {
-    const appointments = await clinicService.getClinicAppointments(req.user._id);
+    const appointments = await clinicService.getClinicAppointments(req.user._id, {
+      from: req.query.from,
+      to: req.query.to,
+      status: req.query.status
+    });
     res.json({ success: true, count: appointments.length, data: appointments });
   } catch (error) {
     res.status(getErrorStatus(error)).json({ success: false, message: error.message });
@@ -198,6 +209,52 @@ exports.getDashboardOverview = async (req, res) => {
   try {
     const overview = await clinicService.getDashboardOverview(req.user._id);
     res.json({ success: true, data: overview });
+  } catch (error) {
+    res.status(getErrorStatus(error)).json({ success: false, message: error.message });
+  }
+};
+
+exports.getFacilityProfile = async (req, res) => {
+  try {
+    const data = await clinicProfileService.getFacilityProfile(req.user);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(getErrorStatus(error)).json({ success: false, message: error.message });
+  }
+};
+
+exports.updateFacilityProfile = async (req, res) => {
+  const validationError = handleValidation(req, res);
+  if (validationError) return validationError;
+
+  try {
+    const data = await clinicProfileService.updateFacilityProfile(req.user, req.body);
+    res.json({ success: true, message: 'Profile updated', data });
+  } catch (error) {
+    res.status(getErrorStatus(error)).json({ success: false, message: error.message });
+  }
+};
+
+exports.updateFacilitySettings = async (req, res) => {
+  try {
+    const data = await clinicProfileService.updateFacilitySettings(req.user, req.body);
+    res.json({ success: true, message: 'Settings saved', data });
+  } catch (error) {
+    res.status(getErrorStatus(error)).json({ success: false, message: error.message });
+  }
+};
+
+exports.submitSupportRequest = async (req, res) => {
+  const validationError = handleValidation(req, res);
+  if (validationError) return validationError;
+
+  try {
+    const data = await clinicProfileService.submitSupportRequest(req.user, req.body);
+    res.status(201).json({
+      success: true,
+      message: 'Support request submitted',
+      data
+    });
   } catch (error) {
     res.status(getErrorStatus(error)).json({ success: false, message: error.message });
   }
