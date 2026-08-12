@@ -13,9 +13,6 @@ backend/.env
 frontend/.env
 !.env.example
 
-# Docker
-.dockerignore
-
 # Build outputs
 build/
 dist/
