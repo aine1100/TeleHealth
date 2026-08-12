@@ -1,41 +1,110 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { MessageSquare, Mic, MicOff, PhoneOff, Video, VideoOff } from 'lucide-react';
+import { MessageSquare, Mic, MicOff, PhoneOff, RefreshCw, Video, VideoOff } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import ConsultChatPanel from './ConsultChatPanel';
 import getSocket from '../../utils/socket';
+import { isSecureAppContext } from '../../utils/apiUrl';
 import { appointmentConsultService } from '../../services/appointmentConsultService';
 
-const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' }
+];
+
+const idOf = (value) => (value == null ? '' : String(value));
+
+const describeMediaError = (error) => {
+  if (!isSecureAppContext()) {
+    return 'Camera blocked: open https://SERVER-IP:3000 (not http), accept the certificate, then allow camera.';
+  }
+  if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+    return 'Camera permission denied. Allow camera in the address bar, then refresh.';
+  }
+  if (error?.name === 'NotFoundError' || error?.name === 'DevicesNotFoundError') {
+    return 'No camera or microphone found on this device.';
+  }
+  if (error?.name === 'NotReadableError' || error?.name === 'TrackStartError') {
+    return 'Camera is in use by another app. Close it and try again.';
+  }
+  return error?.message || 'Unable to access camera or microphone.';
+};
+
+const AUDIO_CONSTRAINTS = {
+  echoCancellation: { ideal: true },
+  noiseSuppression: { ideal: true },
+  autoGainControl: { ideal: true },
+  // Chrome / Edge advanced AEC flags
+  googEchoCancellation: true,
+  googExperimentalEchoCancellation: true,
+  googNoiseSuppression: true,
+  googHighpassFilter: true,
+  googAutoGainControl: true
+};
+
+const applyAudioProcessing = async (stream) => {
+  const audioTracks = stream?.getAudioTracks?.() || [];
+  await Promise.all(
+    audioTracks.map(async (track) => {
+      try {
+        await track.applyConstraints({ advanced: [AUDIO_CONSTRAINTS] });
+      } catch {
+        try {
+          await track.applyConstraints({
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          });
+        } catch {
+          /* browser may ignore unsupported constraints */
+        }
+      }
+    })
+  );
+  return stream;
+};
 
 const acquireLocalMedia = async () => {
   if (!navigator.mediaDevices?.getUserMedia) {
-    return {
-      stream: new MediaStream(),
-      mode: 'chat-only',
-      warning: 'Media devices are not supported in this browser.'
-    };
+    return { stream: new MediaStream(), mode: 'chat-only', warning: 'Media devices are not supported.' };
+  }
+  if (!isSecureAppContext()) {
+    return { stream: new MediaStream(), mode: 'chat-only', warning: describeMediaError({ name: 'SecurityError' }) };
   }
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user' },
+      audio: AUDIO_CONSTRAINTS
+    });
+    await applyAudioProcessing(stream);
     return { stream, mode: 'full', warning: null };
-  } catch {
+  } catch (videoAudioError) {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: AUDIO_CONSTRAINTS
+      });
+      await applyAudioProcessing(stream);
       return {
         stream,
         mode: 'audio',
-        warning:
-          'Camera unavailable — likely in use by another browser on this PC. Joined with microphone only.'
+        warning: `Camera unavailable. Joined with microphone only. (${describeMediaError(videoAudioError)})`
       };
-    } catch {
-      return {
-        stream: new MediaStream(),
-        mode: 'chat-only',
-        warning:
-          'Camera and microphone unavailable. On one PC, only one browser can use the webcam at a time. You can still chat and see the other person if they have video on.'
-      };
+    } catch (audioError) {
+      return { stream: new MediaStream(), mode: 'chat-only', warning: describeMediaError(audioError) };
     }
+  }
+};
+
+const attachLocalTracks = (pc, stream) => {
+  if (stream?.getTracks?.().length) {
+    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+  }
+  if (!stream?.getAudioTracks?.().length) {
+    pc.addTransceiver('audio', { direction: 'recvonly' });
+  }
+  if (!stream?.getVideoTracks?.().length) {
+    pc.addTransceiver('video', { direction: 'recvonly' });
   }
 };
 
@@ -46,9 +115,16 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
   const localStreamRef = useRef(null);
   const socketRef = useRef(null);
   const makingOfferRef = useRef(false);
+  const politeRef = useRef(role !== 'doctor');
+  const pendingCandidatesRef = useRef([]);
+  const peerPresentRef = useRef(false);
+  const myIdRef = useRef(idOf(userId));
+  const onEndedRef = useRef(onEnded);
+  const speakerVolumeRef = useRef(0.7);
 
-  const [connecting, setConnecting] = useState(true);
-  const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState('connecting');
+  const [peerPresent, setPeerPresent] = useState(false);
+  const [socketReady, setSocketReady] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [ending, setEnding] = useState(false);
@@ -57,153 +133,334 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
   const [mediaMode, setMediaMode] = useState('full');
   const [mediaWarning, setMediaWarning] = useState(null);
   const [retryingMedia, setRetryingMedia] = useState(false);
+  const [retryKey, setRetryKey] = useState(0);
+  const [speakerVolume, setSpeakerVolume] = useState(0.7);
 
-  const cleanupMedia = useCallback(() => {
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
-      localStreamRef.current = null;
+  useEffect(() => {
+    myIdRef.current = idOf(userId);
+  }, [userId]);
+
+  useEffect(() => {
+    onEndedRef.current = onEnded;
+  }, [onEnded]);
+
+  useEffect(() => {
+    speakerVolumeRef.current = speakerVolume;
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.volume = speakerVolume;
     }
+  }, [speakerVolume]);
+
+  const flushPendingCandidates = async () => {
+    const pc = peerRef.current;
+    if (!pc?.remoteDescription) return;
+    const pending = pendingCandidatesRef.current.splice(0);
+    for (const candidate of pending) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn('ICE add failed', err);
+      }
+    }
+  };
+
+  const createOffer = useCallback(async () => {
+    const pc = peerRef.current;
+    const sock = socketRef.current;
+    if (!pc || !sock || makingOfferRef.current) return;
+    if (pc.signalingState !== 'stable') return;
+
+    try {
+      makingOfferRef.current = true;
+      setStatus((prev) => (prev === 'connected' ? prev : 'connecting'));
+      const offer = await pc.createOffer();
+      if (pc.signalingState !== 'stable') return;
+      await pc.setLocalDescription(offer);
+      sock.emit('offer', {
+        appointmentId,
+        offer: pc.localDescription,
+        senderId: myIdRef.current
+      });
+    } catch (err) {
+      console.error('Offer error', err);
+      setStatus('failed');
+    } finally {
+      makingOfferRef.current = false;
+    }
+  }, [appointmentId]);
+
+  const createPeerConnection = useCallback(() => {
     if (peerRef.current) {
       peerRef.current.close();
       peerRef.current = null;
     }
-  }, []);
 
-  const createPeerConnection = useCallback(() => {
+    pendingCandidatesRef.current = [];
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+    // Helps ICE reach "connected" even when one side has no camera tracks
+    try {
+      pc.createDataChannel('consult');
+    } catch {
+      /* ignore */
+    }
 
     pc.onicecandidate = (event) => {
       if (event.candidate && socketRef.current) {
         socketRef.current.emit('ice-candidate', {
           appointmentId,
           candidate: event.candidate,
-          senderId: userId
+          senderId: myIdRef.current
         });
       }
     };
 
     pc.ontrack = (event) => {
+      const remoteStream = event.streams?.[0] || new MediaStream([event.track]);
       if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = event.streams[0];
+        // Never mix local tracks into the remote element (causes feedback/echo)
+        remoteVideoRef.current.srcObject = remoteStream;
+        remoteVideoRef.current.muted = false;
+        remoteVideoRef.current.volume = speakerVolumeRef.current;
+        remoteVideoRef.current.play?.().catch(() => {});
       }
-      setConnected(true);
-      setConnecting(false);
+      setStatus('connected');
     };
 
     pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'connected') setStatus('connected');
       if (pc.connectionState === 'failed') {
-        toast.error('Connection failed. Try refreshing the page.');
+        setStatus('failed');
+        toast.error('Video connection failed. Tap Retry.');
       }
     };
 
+    pc.oniceconnectionstatechange = () => {
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        setStatus('connected');
+      }
+      if (pc.iceConnectionState === 'failed') setStatus('failed');
+    };
+
+    attachLocalTracks(pc, localStreamRef.current);
     peerRef.current = pc;
     return pc;
-  }, [appointmentId, userId]);
+  }, [appointmentId]);
 
   useEffect(() => {
+    if (!appointmentId || !idOf(userId)) return undefined;
+
     let mounted = true;
-    let socketInstance = null;
+    let connectTimeout = null;
+    let stuckTimer = null;
+    const socketInstance = getSocket();
+    socketRef.current = socketInstance;
+    setSocket(socketInstance);
 
-    const setup = async () => {
+    const cleanupSocketHandlers = () => {
+      socketInstance.off('connect', onSocketConnect);
+      socketInstance.off('disconnect', onSocketDisconnect);
+      socketInstance.off('room-peers', onRoomPeers);
+      socketInstance.off('peer-joined', onPeerJoined);
+      socketInstance.off('request-offer', onRequestOffer);
+      socketInstance.off('offer', onOffer);
+      socketInstance.off('answer', onAnswer);
+      socketInstance.off('ice-candidate', onIceCandidate);
+      socketInstance.off('consultation-ended', onConsultationEnded);
+    };
+
+    const joinRoom = () => {
+      socketInstance.emit('join-appointment-room', {
+        appointmentId,
+        userId: idOf(userId),
+        role
+      });
+    };
+
+    const markPeerAndNegotiate = async () => {
+      peerPresentRef.current = true;
+      if (mounted) {
+        setPeerPresent(true);
+        setStatus((prev) => (prev === 'connected' ? prev : 'connecting'));
+      }
+      // Doctor (impolite) creates offers; patient asks doctor to offer if needed
+      if (!politeRef.current) {
+        await createOffer();
+      } else {
+        socketInstance.emit('request-offer', {
+          appointmentId,
+          senderId: idOf(userId),
+          role
+        });
+      }
+    };
+
+    const onSocketConnect = () => {
+      if (!mounted) return;
+      setSocketReady(true);
+      joinRoom();
+    };
+
+    const onSocketDisconnect = () => {
+      if (!mounted) return;
+      setSocketReady(false);
+    };
+
+    const onRoomPeers = async ({ peers }) => {
+      if (!mounted) return;
+      if (!Array.isArray(peers) || peers.length === 0) {
+        setStatus((prev) => (prev === 'connected' ? prev : 'waiting'));
+        return;
+      }
+      await markPeerAndNegotiate();
+    };
+
+    const onPeerJoined = async () => {
+      if (!mounted) return;
+      await markPeerAndNegotiate();
+    };
+
+    const onRequestOffer = async ({ senderId }) => {
+      if (idOf(senderId) === myIdRef.current) return;
+      if (politeRef.current) return;
+      peerPresentRef.current = true;
+      setPeerPresent(true);
+      await createOffer();
+    };
+
+    const onOffer = async ({ offer, senderId }) => {
+      if (!peerRef.current || idOf(senderId) === myIdRef.current) return;
+      const pc = peerRef.current;
+      const collision = makingOfferRef.current || pc.signalingState !== 'stable';
+      if (!politeRef.current && collision) return;
+
       try {
-        socketInstance = getSocket();
-        socketRef.current = socketInstance;
-        if (mounted) setSocket(socketInstance);
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        await flushPendingCandidates();
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socketInstance.emit('answer', {
+          appointmentId,
+          answer: pc.localDescription,
+          senderId: myIdRef.current
+        });
+        setStatus((prev) => (prev === 'connected' ? prev : 'connecting'));
+      } catch (err) {
+        console.error('Answer error', err);
+      }
+    };
 
-        setConnecting(true);
+    const onAnswer = async ({ answer, senderId }) => {
+      if (!peerRef.current || idOf(senderId) === myIdRef.current) return;
+      try {
+        if (peerRef.current.signalingState === 'have-local-offer') {
+          await peerRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+          await flushPendingCandidates();
+        }
+      } catch (err) {
+        console.error('Set answer error', err);
+      }
+    };
+
+    const onIceCandidate = async ({ candidate, senderId }) => {
+      if (!peerRef.current || !candidate || idOf(senderId) === myIdRef.current) return;
+      try {
+        if (!peerRef.current.remoteDescription) {
+          pendingCandidatesRef.current.push(candidate);
+          return;
+        }
+        await peerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.warn('ICE candidate error', err);
+      }
+    };
+
+    const onConsultationEnded = () => {
+      toast('Consultation ended');
+      onEndedRef.current?.();
+    };
+
+    const start = async () => {
+      try {
+        setStatus('connecting');
         await appointmentConsultService.getVideoSession(appointmentId);
+        if (!mounted) return;
 
         const { stream, mode, warning } = await acquireLocalMedia();
         if (!mounted) {
-          stream.getTracks().forEach((track) => track.stop());
+          stream.getTracks().forEach((t) => t.stop());
           return;
         }
 
         setMediaMode(mode);
         setMediaWarning(warning);
-        if (warning) {
-          toast(warning, { duration: 6000, icon: mode === 'chat-only' ? '💬' : '🎤' });
-        }
+        if (warning) toast(warning, { duration: 7000 });
 
         localStreamRef.current = stream;
         if (localVideoRef.current && stream.getVideoTracks().length) {
           localVideoRef.current.srcObject = stream;
         }
 
-        const pc = createPeerConnection();
-        stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+        createPeerConnection();
 
-        socketInstance.emit('join-appointment-room', { appointmentId, userId, role });
+        socketInstance.on('connect', onSocketConnect);
+        socketInstance.on('disconnect', onSocketDisconnect);
+        socketInstance.on('room-peers', onRoomPeers);
+        socketInstance.on('peer-joined', onPeerJoined);
+        socketInstance.on('request-offer', onRequestOffer);
+        socketInstance.on('offer', onOffer);
+        socketInstance.on('answer', onAnswer);
+        socketInstance.on('ice-candidate', onIceCandidate);
+        socketInstance.on('consultation-ended', onConsultationEnded);
 
-        socketInstance.on('peer-joined', async ({ role: peerRole }) => {
-          if (role !== 'doctor' || peerRole !== 'patient') return;
-          if (makingOfferRef.current || !peerRef.current) return;
-
-          try {
-            makingOfferRef.current = true;
-            const offer = await peerRef.current.createOffer();
-            await peerRef.current.setLocalDescription(offer);
-            socketInstance.emit('offer', { appointmentId, offer, senderId: userId });
-          } catch (err) {
-            console.error('Offer error', err);
-          } finally {
-            makingOfferRef.current = false;
-          }
-        });
-
-        socketInstance.on('offer', async ({ offer }) => {
-          if (role !== 'patient' || !peerRef.current) return;
-          await peerRef.current.setRemoteDescription(new RTCSessionDescription(offer));
-          const answer = await peerRef.current.createAnswer();
-          await peerRef.current.setLocalDescription(answer);
-          socketInstance.emit('answer', { appointmentId, answer, senderId: userId });
-        });
-
-        socketInstance.on('answer', async ({ answer }) => {
-          if (!peerRef.current) return;
-          await peerRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-          setConnecting(false);
-        });
-
-        socketInstance.on('ice-candidate', async ({ candidate }) => {
-          if (!peerRef.current || !candidate) return;
-          try {
-            await peerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch (err) {
-            console.error('ICE candidate error', err);
-          }
-        });
-
-        socketInstance.on('consultation-ended', () => {
-          toast('Consultation ended');
-          onEnded?.();
-        });
-
-        if (role === 'doctor') {
-          setConnecting(false);
+        if (socketInstance.connected) {
+          setSocketReady(true);
+          joinRoom();
+        } else {
+          connectTimeout = setTimeout(() => {
+            if (mounted && !socketInstance.connected) {
+              toast.error('Realtime connection failed. Check that the backend is running.');
+              setStatus('failed');
+            }
+          }, 10000);
+          socketInstance.connect();
         }
+
+        stuckTimer = setTimeout(() => {
+          if (mounted && peerPresentRef.current) {
+            setStatus((prev) => {
+              if (prev === 'connecting') {
+                toast.error('Still connecting. Tap Retry.');
+                return 'failed';
+              }
+              return prev;
+            });
+          }
+        }, 20000);
       } catch (error) {
         toast.error(error?.response?.data?.message || 'Unable to start consultation');
-        setConnecting(false);
+        setStatus('failed');
       }
     };
 
-    setup();
+    start();
 
     return () => {
       mounted = false;
-      const activeSocket = socketRef.current || socketInstance;
-      if (activeSocket) {
-        activeSocket.emit('leave-appointment-room', { appointmentId });
-        activeSocket.off('peer-joined');
-        activeSocket.off('offer');
-        activeSocket.off('answer');
-        activeSocket.off('ice-candidate');
-        activeSocket.off('consultation-ended');
+      if (connectTimeout) clearTimeout(connectTimeout);
+      if (stuckTimer) clearTimeout(stuckTimer);
+      cleanupSocketHandlers();
+      socketInstance.emit('leave-appointment-room', { appointmentId });
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop());
+        localStreamRef.current = null;
       }
-      cleanupMedia();
+      if (peerRef.current) {
+        peerRef.current.close();
+        peerRef.current = null;
+      }
     };
-  }, [appointmentId, userId, role, createPeerConnection, cleanupMedia, onEnded]);
+  }, [appointmentId, userId, role, createPeerConnection, createOffer, retryKey]);
 
   const toggleAudio = () => {
     if (!localStreamRef.current) return;
@@ -224,31 +481,33 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
   const retryCamera = async () => {
     setRetryingMedia(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: AUDIO_CONSTRAINTS
+      });
+      await applyAudioProcessing(stream);
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
       }
       localStreamRef.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-      }
-      if (peerRef.current) {
-        stream.getTracks().forEach((track) => peerRef.current.addTrack(track, stream));
-      }
+      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
       setMediaMode('full');
       setMediaWarning(null);
       setAudioEnabled(true);
       setVideoEnabled(true);
-      toast.success('Camera and microphone connected');
+      setRetryKey((k) => k + 1);
+      toast.success('Camera connected — reconnecting call');
     } catch {
-      toast.error('Camera still unavailable. Close the other browser tab or app using the webcam, then try again.');
+      toast.error('Camera still unavailable.');
     } finally {
       setRetryingMedia(false);
     }
   };
 
-  const hasLocalVideo = mediaMode === 'full';
-  const hasLocalAudio = mediaMode !== 'chat-only';
+  const retryConnection = () => {
+    setStatus('connecting');
+    setRetryKey((k) => k + 1);
+  };
 
   const endCall = async () => {
     setEnding(true);
@@ -262,6 +521,27 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
       setEnding(false);
     }
   };
+
+  const hasLocalVideo = mediaMode === 'full';
+  const hasLocalAudio = mediaMode !== 'chat-only';
+  const connecting = status === 'connecting';
+  const connected = status === 'connected';
+  const waiting = status === 'waiting';
+  const failed = status === 'failed';
+
+  const statusLabel = connected
+    ? 'Connected'
+    : connecting
+      ? socketReady
+        ? 'Connecting…'
+        : 'Connecting socket…'
+      : failed
+        ? 'Connection failed'
+        : 'Waiting for peer';
+
+  if (!idOf(userId)) {
+    return <p className="py-16 text-center text-sm text-ink-500">Loading your session…</p>;
+  }
 
   return (
     <div className="overflow-hidden rounded-3xl border border-ink-200/70 bg-white shadow-card">
@@ -277,11 +557,23 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
                 ? 'bg-emerald-50 text-emerald-700'
                 : connecting
                   ? 'bg-amber-50 text-amber-700'
-                  : 'bg-ink-100 text-ink-600'
+                  : failed
+                    ? 'bg-rose-50 text-rose-700'
+                    : 'bg-ink-100 text-ink-600'
             }`}
           >
-            {connecting ? 'Connecting…' : connected ? 'Connected' : 'Waiting for peer'}
+            {statusLabel}
           </span>
+          {(failed || (connecting && peerPresent)) && (
+            <button
+              type="button"
+              onClick={retryConnection}
+              className="inline-flex items-center gap-1.5 rounded-full border border-ink-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 hover:bg-ink-50"
+            >
+              <RefreshCw size={14} />
+              Retry
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setChatOpen((prev) => !prev)}
@@ -318,9 +610,20 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
               playsInline
               className="h-full min-h-[320px] w-full bg-ink-100 object-cover"
             />
-            {!connected && !connecting ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-white/80">
-                <p className="text-sm font-medium text-ink-500">Waiting for {counterpartName} to join…</p>
+            {!connected ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/85 px-4 text-center">
+                <p className="text-sm font-medium text-ink-500">
+                  {connecting
+                    ? `Connecting to ${counterpartName}…`
+                    : waiting
+                      ? `Waiting for ${counterpartName} to join…`
+                      : failed
+                        ? 'Connection failed. Tap Retry.'
+                        : `Waiting for ${counterpartName}…`}
+                </p>
+                {peerPresent && connecting ? (
+                  <p className="text-xs text-ink-400">Peer joined — negotiating media…</p>
+                ) : null}
               </div>
             ) : null}
             <video
@@ -332,12 +635,32 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
                 hasLocalVideo ? '' : 'hidden'
               }`}
             />
-            {!hasLocalVideo && mediaMode === 'chat-only' ? (
+            {!hasLocalVideo ? (
               <div className="absolute bottom-4 right-4 flex h-24 w-36 items-center justify-center rounded-xl border-2 border-dashed border-ink-200 bg-white/90 px-2 text-center text-[10px] font-medium text-ink-500 sm:h-28 sm:w-44">
-                No camera — chat only
+                {mediaMode === 'audio' ? 'Mic only' : 'No camera'}
               </div>
             ) : null}
           </div>
+
+          <div className="mt-3 flex items-center gap-3 px-1">
+            <label htmlFor="speaker-volume" className="shrink-0 text-xs font-medium text-ink-500">
+              Speaker
+            </label>
+            <input
+              id="speaker-volume"
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={speakerVolume}
+              onChange={(e) => setSpeakerVolume(Number(e.target.value))}
+              className="h-1.5 w-full cursor-pointer accent-brand-500"
+            />
+            <span className="w-8 text-right text-xs text-ink-400">{Math.round(speakerVolume * 100)}%</span>
+          </div>
+          <p className="mt-1 text-center text-[11px] text-ink-400">
+            Echo tip: use headphones, or lower speaker volume if you hear your own voice.
+          </p>
 
           <div className="mt-4 flex items-center justify-center gap-3">
             <button
@@ -381,7 +704,7 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
         {chatOpen ? (
           <ConsultChatPanel
             appointmentId={appointmentId}
-            userId={userId}
+            userId={idOf(userId)}
             role={role}
             userName={userName}
             socket={socket}

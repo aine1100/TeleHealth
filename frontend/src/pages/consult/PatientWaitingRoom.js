@@ -68,16 +68,16 @@ const PatientWaitingRoom = () => {
     return () => clearInterval(interval);
   }, [status?.status, loadStatus]);
 
+  useEffect(() => {
+    if (status?.status !== 'in_progress') return;
+    navigate(`/patient/consult/${appointmentId}`, { replace: true });
+  }, [status?.status, appointmentId, navigate]);
+
   const doctorName = status?.doctor ? getDoctorName({ doctor: status.doctor }) : 'Your doctor';
   const queue = status?.waitingRoom || {};
   const inQueue = status?.status === 'in_waiting_room';
   const canJoin = status?.status === 'confirmed';
   const inCall = status?.status === 'in_progress';
-
-  if (inCall) {
-    navigate(`/patient/consult/${appointmentId}`, { replace: true });
-    return null;
-  }
 
   return (
     <div className="mx-auto max-w-lg animate-fade-up">
@@ -105,7 +105,9 @@ const PatientWaitingRoom = () => {
               <p className="mt-1 text-lg font-bold text-ink-900">{status?.scheduledTime || '—'}</p>
             </div>
 
-            {inQueue ? (
+            {inCall ? (
+              <p className="mt-6 text-sm font-medium text-brand-700">Consultation started — opening video room…</p>
+            ) : inQueue ? (
               <div className="mt-4 space-y-3">
                 <div className="flex items-center gap-3 rounded-2xl border border-brand-100 bg-brand-50/60 px-4 py-3">
                   <Users size={18} className="text-brand-600" />

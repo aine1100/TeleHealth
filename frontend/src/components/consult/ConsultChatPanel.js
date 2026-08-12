@@ -2,14 +2,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FileText, Image as ImageIcon, Paperclip, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { appointmentConsultService } from '../../services/appointmentConsultService';
+import { resolveApiUrl } from '../../utils/apiUrl';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000';
-
-export const resolveAttachmentUrl = (url) => {
-  if (!url) return '';
-  if (url.startsWith('http://') || url.startsWith('https://')) return url;
-  return `${API_URL.replace(/\/$/, '')}${url.startsWith('/') ? url : `/${url}`}`;
-};
+export const resolveAttachmentUrl = (url) => resolveApiUrl(url);
 
 const formatTime = (value) => {
   if (!value) return '';

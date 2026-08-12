@@ -11,6 +11,10 @@ frontend/node_modules/
 .env.production.local
 backend/.env
 frontend/.env
+!.env.example
+
+# Docker
+.dockerignore
 
 # Build outputs
 build/
@@ -34,6 +38,7 @@ Thumbs.db
 # Uploads and local storage
 uploads/
 backend/uploads/
+backend/public/
 
 # Documentation output
 docs/*.tmp
