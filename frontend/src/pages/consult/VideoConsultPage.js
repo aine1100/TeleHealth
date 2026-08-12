@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import VideoConsultation from '../../components/consult/VideoConsultation';
@@ -41,11 +41,11 @@ const VideoConsultPage = ({ role = 'patient' }) => {
 
   const userName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || (role === 'doctor' ? 'Doctor' : 'Patient');
 
-  const handleEnded = () => {
+  const handleEnded = useCallback(() => {
     navigate(backPath);
-  };
+  }, [navigate, backPath]);
 
-  if (loading) {
+  if (loading || !user?._id) {
     return <p className="py-20 text-center text-sm text-ink-500">Loading consultation…</p>;
   }
 
