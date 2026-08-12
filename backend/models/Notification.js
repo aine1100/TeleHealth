@@ -23,6 +23,8 @@ const notificationSchema = new mongoose.Schema({
       'lab_results_ready',
       'medicine_reminder',
       'medicine_refill',
+      'pharmacy_order_received',
+      'pharmacy_order_update',
       'payment_received',
       'payment_failed',
       'insurance_claim_update',
@@ -38,7 +40,7 @@ const notificationSchema = new mongoose.Schema({
   
   // Related Entity
   relatedTo: {
-    model: { type: String, enum: ['Appointment', 'MedicineReminder', 'User'] },
+    model: { type: String, enum: ['Appointment', 'MedicineReminder', 'User', 'PharmacyOrder'] },
     id: { type: mongoose.Schema.Types.ObjectId }
   },
   

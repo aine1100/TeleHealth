@@ -1,4 +1,4 @@
-const { Appointment, User } = require('../models');
+const { Appointment, User, MedicineReminder } = require('../models');
 const { v4: uuidv4 } = require('uuid');
 const { buildAppointmentPayment } = require('../utils/apiErrors');
 const { assertSlotAvailable } = require('./doctorAvailabilityService');
@@ -93,7 +93,9 @@ exports.getMyAppointments = async (user) => {
 
 exports.getAppointmentById = async ({ user, appointmentId }) => {
   const appointment = await Appointment.findById(appointmentId)
-    .populate('patient doctor clinic', 'firstName lastName phone avatar clinicName organizationName')
+    .populate('patient', 'firstName lastName phone avatar')
+    .populate('doctor', 'firstName lastName phone avatar doctorProfile.specialty')
+    .populate('clinic', 'firstName lastName phone clinicProfile.clinicName organizationProfile.organizationName')
     .lean();
 
   if (!appointment) {
@@ -102,11 +104,15 @@ exports.getAppointmentById = async ({ user, appointmentId }) => {
     throw error;
   }
 
+  const clinicId = appointment.clinic?._id?.toString() || appointment.clinic?.toString();
+  const doctorId = appointment.doctor?._id?.toString() || appointment.doctor?.toString();
+  const patientId = appointment.patient?._id?.toString() || appointment.patient?.toString();
+
   const isAllowed =
     user.role === 'admin' ||
-    user.role === 'clinic_admin' && appointment.clinic?._id?.toString() === user._id.toString() ||
-    user.role === 'doctor' && appointment.doctor?._id?.toString() === user._id.toString() ||
-    user.role === 'patient' && appointment.patient?._id?.toString() === user._id.toString();
+    (user.role === 'clinic_admin' && clinicId === user._id.toString()) ||
+    (user.role === 'doctor' && doctorId === user._id.toString()) ||
+    (user.role === 'patient' && patientId === user._id.toString());
 
   if (!isAllowed) {
     const error = new Error('Access denied');
@@ -542,3 +548,175 @@ exports.getVideoCallSession = async ({ user, appointmentId }) => {
     status: appointment.status
   };
 };
+
+const mapFrequencyToReminder = (frequency = '') => {
+  const value = String(frequency).toLowerCase().trim();
+  if (value.includes('four') || value.includes('4')) return 'four_times_daily';
+  if (value.includes('thrice') || value.includes('three') || value.includes('tds') || value.includes('3')) {
+    return 'thrice_daily';
+  }
+  if (value.includes('twice') || value.includes('bd') || value.includes('2')) return 'twice_daily';
+  if (value.includes('week')) return 'weekly';
+  if (value.includes('need') || value.includes('prn')) return 'as_needed';
+  if (value.includes('once') || value.includes('daily') || value.includes('od') || value.includes('1')) {
+    return 'once_daily';
+  }
+  return 'once_daily';
+};
+
+const defaultTimesForFrequency = (frequency) => {
+  switch (frequency) {
+    case 'twice_daily':
+      return ['08:00', '20:00'];
+    case 'thrice_daily':
+      return ['08:00', '14:00', '20:00'];
+    case 'four_times_daily':
+      return ['08:00', '12:00', '16:00', '20:00'];
+    case 'every_8_hours':
+      return ['06:00', '14:00', '22:00'];
+    case 'every_12_hours':
+      return ['08:00', '20:00'];
+    case 'as_needed':
+      return [];
+    default:
+      return ['08:00'];
+  }
+};
+
+exports.saveConsultationCarePlan = async ({ user, appointmentId, body }) => {
+  if (user.role !== 'doctor' && user.role !== 'admin') {
+    const error = new Error('Only doctors can write a care plan');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const appointment = await Appointment.findById(appointmentId);
+  if (!appointment) {
+    const error = new Error('Appointment not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (user.role === 'doctor' && appointment.doctor?.toString() !== user._id.toString()) {
+    const error = new Error('Access denied');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (!['in_progress', 'completed', 'confirmed'].includes(appointment.status)) {
+    const error = new Error('Care plan can only be added for confirmed or completed visits');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const {
+    diagnosis,
+    notes,
+    prescription = [],
+    labOrders = [],
+    createReminders = true,
+    markCompleted = false
+  } = body;
+
+  if (diagnosis !== undefined) appointment.diagnosis = diagnosis;
+  if (notes !== undefined) appointment.notes = notes;
+
+  appointment.prescription = (Array.isArray(prescription) ? prescription : [])
+    .filter((item) => item?.medicineName?.trim())
+    .map((item) => ({
+      medicineName: String(item.medicineName).trim(),
+      dosage: item.dosage || '',
+      frequency: item.frequency || '',
+      duration: item.duration || '',
+      instructions: item.instructions || '',
+      isChronic: Boolean(item.isChronic)
+    }));
+
+  appointment.labOrders = (Array.isArray(labOrders) ? labOrders : [])
+    .filter((item) => item?.testName?.trim())
+    .map((item) => ({
+      testName: String(item.testName).trim(),
+      testCode: item.testCode || '',
+      instructions: item.instructions || '',
+      status: item.status || 'ordered'
+    }));
+
+  if (markCompleted || appointment.status === 'in_progress') {
+    appointment.status = 'completed';
+  }
+
+  appointment.updatedBy = user._id;
+  await appointment.save();
+  await appointment.populate('patient doctor', 'firstName lastName phone avatar doctorProfile.specialty');
+
+  if (createReminders && appointment.prescription.length) {
+    await MedicineReminder.deleteMany({ appointment: appointment._id });
+
+    const reminderDocs = appointment.prescription.map((rx) => {
+      const frequency = mapFrequencyToReminder(rx.frequency);
+      return {
+        patient: appointment.patient._id || appointment.patient,
+        doctor: appointment.doctor._id || appointment.doctor,
+        appointment: appointment._id,
+        medicineName: rx.medicineName,
+        dosage: rx.dosage || 'As prescribed',
+        frequency,
+        times: defaultTimesForFrequency(frequency),
+        startDate: new Date(),
+        duration: rx.duration || '',
+        isChronic: Boolean(rx.isChronic),
+        instructions: rx.instructions || '',
+        status: 'active'
+      };
+    });
+
+    await MedicineReminder.insertMany(reminderDocs);
+  }
+
+  notificationService.notifyPrescriptionReady(appointment).catch((err) => {
+    console.error('[Notification] prescription ready', err.message);
+  });
+
+  if (appointment.labOrders.length) {
+    notificationService.notifyLabOrdersReady(appointment).catch((err) => {
+      console.error('[Notification] lab orders', err.message);
+    });
+  }
+
+  return appointment;
+};
+
+exports.getPatientCareRecords = async (user) => {
+  if (user.role !== 'patient') {
+    const error = new Error('Only patients can view their care records');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const appointments = await Appointment.find({
+    patient: user._id,
+    $or: [
+      { 'prescription.0': { $exists: true } },
+      { 'labOrders.0': { $exists: true } },
+      { diagnosis: { $exists: true, $ne: '' } }
+    ]
+  })
+    .populate('doctor', 'firstName lastName doctorProfile.specialty avatar')
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  return appointments.map((appt) => ({
+    _id: appt._id,
+    scheduledDate: appt.scheduledDate,
+    scheduledTime: appt.scheduledTime,
+    status: appt.status,
+    type: appt.type,
+    diagnosis: appt.diagnosis || '',
+    notes: appt.notes || '',
+    prescription: appt.prescription || [],
+    labOrders: appt.labOrders || [],
+    doctor: appt.doctor,
+    updatedAt: appt.updatedAt
+  }));
+};
+

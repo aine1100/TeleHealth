@@ -1,12 +1,16 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import api, { setAuthToken } from '../services/apiClient';
 import { resolveHomePath, roleHome } from '../utils/orgAccess';
+import LogoutConfirmModal from '../components/auth/LogoutConfirmModal';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [logoutOpen, setLogoutOpen] = useState(false);
+  const logoutAfterRef = useRef(null);
 
   const fetchUser = useCallback(async () => {
     try {
@@ -36,7 +40,12 @@ export const AuthProvider = ({ children }) => {
     const token = data.accessToken || data.token;
     if (token) setAuthToken(token);
     if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
-    if (data.user) setUser(data.user);
+    // Commit user before callers navigate so ProtectedRoute does not bounce to /login.
+    if (data.user) {
+      flushSync(() => {
+        setUser(data.user);
+      });
+    }
     return data;
   };
 
@@ -50,7 +59,7 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
-  const registerClinic = async (payload, files = []) => {
+  const appendOrgForm = (payload, files = []) => {
     const form = new FormData();
     Object.entries(payload).forEach(([key, value]) => {
       if (value === undefined || value === null) return;
@@ -61,44 +70,32 @@ export const AuthProvider = ({ children }) => {
       }
     });
     files.forEach((file) => form.append('documents', file));
+    return form;
+  };
 
-    const res = await api.post('/api/auth/register/clinic', form, {
+  const registerClinic = async (payload, files = []) => {
+    const res = await api.post('/api/auth/register/clinic', appendOrgForm(payload, files), {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     return res.data;
   };
 
   const registerLab = async (payload, files = []) => {
-    const form = new FormData();
-    Object.entries(payload).forEach(([key, value]) => {
-      if (value === undefined || value === null) return;
-      if (typeof value === 'object') {
-        form.append(key, JSON.stringify(value));
-      } else {
-        form.append(key, value);
-      }
-    });
-    files.forEach((file) => form.append('documents', file));
-
-    const res = await api.post('/api/auth/register/lab', form, {
+    const res = await api.post('/api/auth/register/lab', appendOrgForm(payload, files), {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     return res.data;
   };
 
   const registerInsurance = async (payload, files = []) => {
-    const form = new FormData();
-    Object.entries(payload).forEach(([key, value]) => {
-      if (value === undefined || value === null) return;
-      if (typeof value === 'object') {
-        form.append(key, JSON.stringify(value));
-      } else {
-        form.append(key, value);
-      }
+    const res = await api.post('/api/auth/register/insurance', appendOrgForm(payload, files), {
+      headers: { 'Content-Type': 'multipart/form-data' }
     });
-    files.forEach((file) => form.append('documents', file));
+    return res.data;
+  };
 
-    const res = await api.post('/api/auth/register/insurance', form, {
+  const registerPharmacy = async (payload, files = []) => {
+    const res = await api.post('/api/auth/register/pharmacy', appendOrgForm(payload, files), {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
     return res.data;
@@ -140,6 +137,24 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const requestLogout = (afterLogout) => {
+    logoutAfterRef.current = typeof afterLogout === 'function' ? afterLogout : null;
+    setLogoutOpen(true);
+  };
+
+  const cancelLogout = () => {
+    logoutAfterRef.current = null;
+    setLogoutOpen(false);
+  };
+
+  const confirmLogout = () => {
+    const after = logoutAfterRef.current;
+    logoutAfterRef.current = null;
+    setLogoutOpen(false);
+    logout();
+    after?.();
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -150,6 +165,7 @@ export const AuthProvider = ({ children }) => {
         registerClinic,
         registerLab,
         registerInsurance,
+        registerPharmacy,
         verifyEmail,
         resendVerificationOtp,
         forgotPassword,
@@ -157,12 +173,14 @@ export const AuthProvider = ({ children }) => {
         setupDoctor,
         getDoctorInvite,
         logout,
+        requestLogout,
         fetchUser,
         roleHome,
         resolveHomePath
       }}
     >
       {children}
+      <LogoutConfirmModal open={logoutOpen} onCancel={cancelLogout} onConfirm={confirmLogout} />
     </AuthContext.Provider>
   );
 };

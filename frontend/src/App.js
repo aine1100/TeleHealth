@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
@@ -8,6 +8,7 @@ import RegisterPatient from './pages/auth/RegisterPatient';
 import RegisterClinic from './pages/auth/RegisterClinic';
 import RegisterLab from './pages/auth/RegisterLab';
 import RegisterInsurance from './pages/auth/RegisterInsurance';
+import RegisterPharmacy from './pages/auth/RegisterPharmacy';
 import VerifyEmail from './pages/auth/VerifyEmail';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
@@ -33,7 +34,11 @@ import PatientOverview from './pages/patient/PatientOverview';
 import PatientDoctors from './pages/patient/PatientDoctors';
 import PatientBook from './pages/patient/PatientBook';
 import PatientAppointments from './pages/patient/PatientAppointments';
+import AppointmentDetailPage from './pages/appointments/AppointmentDetailPage';
 import PatientMedicines from './pages/patient/PatientMedicines';
+import PatientCare from './pages/patient/PatientCare';
+import PatientPharmacies from './pages/patient/PatientPharmacies';
+import PatientPharmacyOrders from './pages/patient/PatientPharmacyOrders';
 import PatientScreening from './pages/patient/PatientScreening';
 import PatientProfile from './pages/patient/PatientProfile';
 import PatientSettings from './pages/patient/PatientSettings';
@@ -45,11 +50,22 @@ import VideoConsultPage from './pages/consult/VideoConsultPage';
 import DoctorLayout from './layouts/DoctorLayout';
 import DoctorOverview from './pages/doctor/DoctorOverview';
 import DoctorAppointments from './pages/doctor/DoctorAppointments';
+import DoctorCarePlan from './pages/doctor/DoctorCarePlan';
 import DoctorPatients from './pages/doctor/DoctorPatients';
+import DoctorPharmacies from './pages/doctor/DoctorPharmacies';
 import DoctorProfile from './pages/doctor/DoctorProfile';
 import DoctorSchedule from './pages/doctor/DoctorSchedule';
 import DoctorSettings from './pages/doctor/DoctorSettings';
 import DoctorSupport from './pages/doctor/DoctorSupport';
+
+import PharmacyLayout from './layouts/PharmacyLayout';
+import PharmacyOverview from './pages/pharmacy/PharmacyOverview';
+import PharmacyInventory from './pages/pharmacy/PharmacyInventory';
+import PharmacyOrders from './pages/pharmacy/PharmacyOrders';
+import PharmacyProfile from './pages/pharmacy/PharmacyProfile';
+import PharmacySettings from './pages/pharmacy/PharmacySettings';
+import PharmacySupport from './pages/pharmacy/PharmacySupport';
+import PharmacyDetailPage from './components/pharmacy/PharmacyDetailPage';
 
 import AdminLayout from './layouts/AdminLayout';
 import AdminOverview from './pages/admin/AdminOverview';
@@ -61,6 +77,7 @@ import AdminPatientDetail from './pages/admin/AdminPatientDetail';
 import AdminSupport from './pages/admin/AdminSupport';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { getAuthToken } from './services/apiClient';
 import { isOrganizationApproved, isOrganizationRole } from './utils/orgAccess';
 
 const LoadingScreen = () => (
@@ -68,9 +85,17 @@ const LoadingScreen = () => (
 );
 
 const ProtectedRoute = ({ children, roles, requireOrgApproval = false }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, fetchUser } = useAuth();
+  const hasToken = Boolean(getAuthToken());
 
-  if (loading) return <LoadingScreen />;
+  // Token is written sync on login; user state can lag one tick. Wait instead of bouncing to /login.
+  useEffect(() => {
+    if (!loading && hasToken && !user) {
+      fetchUser();
+    }
+  }, [loading, hasToken, user, fetchUser]);
+
+  if (loading || (hasToken && !user)) return <LoadingScreen />;
 
   if (!user) {
     return <Navigate to="/login" replace state={{ from: window.location.pathname }} />;
@@ -98,6 +123,7 @@ function AppRoutes() {
       <Route path="/register/clinic" element={<RegisterClinic />} />
       <Route path="/register/lab" element={<RegisterLab />} />
       <Route path="/register/insurance" element={<RegisterInsurance />} />
+      <Route path="/register/pharmacy" element={<RegisterPharmacy />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
@@ -105,7 +131,7 @@ function AppRoutes() {
       <Route
         path="/pending-approval"
         element={
-          <ProtectedRoute roles={['clinic_admin', 'lab_tech', 'insurance']}>
+          <ProtectedRoute roles={['clinic_admin', 'lab_tech', 'insurance', 'pharmacist']}>
             <PendingApproval />
           </ProtectedRoute>
         }
@@ -123,8 +149,13 @@ function AppRoutes() {
         <Route path="doctors" element={<PatientDoctors />} />
         <Route path="doctors/:doctorId" element={<PatientBook />} />
         <Route path="appointments" element={<PatientAppointments />} />
+        <Route path="appointments/:appointmentId" element={<AppointmentDetailPage role="patient" />} />
         <Route path="waiting/:appointmentId" element={<PatientWaitingRoom />} />
         <Route path="consult/:appointmentId" element={<VideoConsultPage role="patient" />} />
+        <Route path="care" element={<PatientCare />} />
+        <Route path="pharmacies" element={<PatientPharmacies />} />
+        <Route path="pharmacies/:pharmacyId" element={<PharmacyDetailPage role="patient" />} />
+        <Route path="orders" element={<PatientPharmacyOrders />} />
         <Route path="medicines" element={<PatientMedicines />} />
         <Route path="ai-screening" element={<PatientScreening />} />
         <Route path="notifications" element={<PatientNotifications />} />
@@ -146,6 +177,7 @@ function AppRoutes() {
         <Route path="doctors" element={<ClinicDoctors />} />
         <Route path="doctors/:doctorId" element={<ClinicDoctorDetail />} />
         <Route path="appointments" element={<ClinicAppointments />} />
+        <Route path="appointments/:appointmentId" element={<AppointmentDetailPage role="clinic" />} />
         <Route path="patients" element={<ClinicPatients />} />
         <Route path="patients/:patientId" element={<ClinicPatientDetail />} />
         <Route
@@ -200,14 +232,36 @@ function AppRoutes() {
       >
         <Route path="home" element={<DoctorOverview />} />
         <Route path="appointments" element={<DoctorAppointments />} />
+        <Route path="appointments/:appointmentId" element={<AppointmentDetailPage role="doctor" />} />
+        <Route path="appointments/:appointmentId/care-plan" element={<DoctorCarePlan />} />
         <Route path="consult/:appointmentId" element={<VideoConsultPage role="doctor" />} />
         <Route path="patients" element={<DoctorPatients />} />
+        <Route path="pharmacies" element={<DoctorPharmacies />} />
+        <Route path="pharmacies/:pharmacyId" element={<PharmacyDetailPage role="doctor" />} />
         <Route path="profile" element={<DoctorProfile />} />
         <Route path="schedule" element={<DoctorSchedule />} />
         <Route path="settings" element={<DoctorSettings />} />
         <Route path="support" element={<DoctorSupport />} />
         <Route index element={<Navigate to="home" replace />} />
       </Route>
+
+      <Route
+        path="/pharmacy"
+        element={
+          <ProtectedRoute roles={['pharmacist']} requireOrgApproval>
+            <PharmacyLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="home" element={<PharmacyOverview />} />
+        <Route path="inventory" element={<PharmacyInventory />} />
+        <Route path="orders" element={<PharmacyOrders />} />
+        <Route path="profile" element={<PharmacyProfile />} />
+        <Route path="settings" element={<PharmacySettings />} />
+        <Route path="support" element={<PharmacySupport />} />
+        <Route index element={<Navigate to="home" replace />} />
+      </Route>
+
       <Route
         path="/lab/home"
         element={

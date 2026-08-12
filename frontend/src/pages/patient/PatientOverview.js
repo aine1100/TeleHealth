@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { CalendarDays, Pill, Sparkles, Stethoscope } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { CalendarDays, Pill, Sparkles, Stethoscope, Store } from 'lucide-react';
 import StatCard from '../../components/clinic/StatCard';
+import DoctorCard from '../../components/DoctorCard';
+import PharmacyCard from '../../components/PharmacyCard';
 import { patientService } from '../../services/patientService';
+import { pharmacyService } from '../../services/pharmacyService';
 import { useAuth } from '../../context/AuthContext';
 import {
   formatTimeLabel,
@@ -16,26 +19,35 @@ import {
 
 const PatientOverview = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [appointments, setAppointments] = useState([]);
   const [reminders, setReminders] = useState([]);
+  const [doctors, setDoctors] = useState([]);
+  const [pharmacies, setPharmacies] = useState([]);
 
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       try {
         setLoading(true);
-        const [apptRes, medRes] = await Promise.all([
+        const [apptRes, medRes, doctorRes, pharmacyRes] = await Promise.all([
           patientService.getAppointments(),
-          patientService.getReminders()
+          patientService.getReminders(),
+          patientService.searchDoctors({}).catch(() => ({ data: [] })),
+          pharmacyService.listPharmacies({}).catch(() => ({ data: [] }))
         ]);
         if (!mounted) return;
         setAppointments(apptRes?.data || []);
         setReminders(medRes?.data || []);
+        setDoctors(doctorRes?.data || []);
+        setPharmacies(pharmacyRes?.data || []);
       } catch {
         if (mounted) {
           setAppointments([]);
           setReminders([]);
+          setDoctors([]);
+          setPharmacies([]);
         }
       } finally {
         if (mounted) setLoading(false);
@@ -111,6 +123,9 @@ const PatientOverview = () => {
       .slice(0, 6);
   }, [appointments, today]);
 
+  const featuredDoctors = doctors.slice(0, 3);
+  const featuredPharmacies = pharmacies.slice(0, 3);
+
   return (
     <div className="mx-auto max-w-[1400px] animate-fade-up">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -118,15 +133,26 @@ const PatientOverview = () => {
           <h1 className="text-2xl font-bold tracking-tight text-ink-900">
             Welcome, {user?.firstName || 'there'}
           </h1>
-          <p className="mt-1 text-sm text-ink-500">Book visits, track medicines, and keep your health record in one place.</p>
+          <p className="mt-1 text-sm text-ink-500">
+            Book visits, find pharmacies, and keep your health record in one place.
+          </p>
         </div>
-        <Link
-          to="/patient/doctors"
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-500/20 hover:bg-brand-600"
-        >
-          <Stethoscope size={16} />
-          Book a visit
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/patient/doctors"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-500/20 hover:bg-brand-600"
+          >
+            <Stethoscope size={16} />
+            Book a visit
+          </Link>
+          <Link
+            to="/patient/pharmacies"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-ink-200 bg-white px-4 py-2.5 text-sm font-semibold text-ink-700 hover:bg-ink-50"
+          >
+            <Store size={16} />
+            Find a pharmacy
+          </Link>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -155,7 +181,8 @@ const PatientOverview = () => {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-ink-900">{getDoctorName(appt)}</p>
                       <p className="mt-0.5 text-xs text-ink-500">
-                        {date ? date.toLocaleDateString() : '—'} · {formatTimeLabel(appt.scheduledTime)} · {style.label}
+                        {date ? date.toLocaleDateString() : '—'} · {formatTimeLabel(appt.scheduledTime)} ·{' '}
+                        {style.label}
                       </p>
                     </div>
                     <span
@@ -180,6 +207,7 @@ const PatientOverview = () => {
             <div className="mt-3 space-y-2">
               {[
                 { to: '/patient/doctors', label: 'Find a doctor', icon: Stethoscope },
+                { to: '/patient/pharmacies', label: 'Find a pharmacy', icon: Store },
                 { to: '/patient/appointments', label: 'My appointments', icon: CalendarDays },
                 { to: '/patient/medicines', label: 'Medicine reminders', icon: Pill },
                 { to: '/patient/ai-screening', label: 'AI screening', icon: Sparkles }
@@ -197,6 +225,65 @@ const PatientOverview = () => {
           </div>
         </div>
       </div>
+
+      <section className="mt-8">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-brand-600">Doctors available</h2>
+            <p className="mt-0.5 text-sm text-ink-500">Book a consult with a verified clinician.</p>
+          </div>
+          <Link to="/patient/doctors" className="text-xs font-semibold text-brand-600 hover:text-brand-700">
+            View all
+          </Link>
+        </div>
+        <div className="mt-4 space-y-4">
+          {loading ? (
+            <div className="rounded-2xl border border-ink-200/70 bg-white p-10 text-center text-sm text-ink-500 shadow-card">
+              Loading doctors…
+            </div>
+          ) : featuredDoctors.length ? (
+            featuredDoctors.map((doctor) => <DoctorCard key={doctor._id} doctor={doctor} />)
+          ) : (
+            <div className="rounded-2xl border border-ink-200/70 bg-white p-10 text-center text-sm text-ink-500 shadow-card">
+              No doctors available right now.
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="mt-8">
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-brand-600">Pharmacies near you</h2>
+            <p className="mt-0.5 text-sm text-ink-500">
+              Send a prescription for pickup or delivery.
+            </p>
+          </div>
+          <Link to="/patient/pharmacies" className="text-xs font-semibold text-brand-600 hover:text-brand-700">
+            View all
+          </Link>
+        </div>
+        <div className="mt-4 space-y-4">
+          {loading ? (
+            <div className="rounded-2xl border border-ink-200/70 bg-white p-10 text-center text-sm text-ink-500 shadow-card">
+              Loading pharmacies…
+            </div>
+          ) : featuredPharmacies.length ? (
+            featuredPharmacies.map((pharmacy) => (
+              <PharmacyCard
+                key={pharmacy._id}
+                pharmacy={pharmacy}
+                actionLabel="View details"
+                onAction={() => navigate(`/patient/pharmacies/${pharmacy._id}`)}
+              />
+            ))
+          ) : (
+            <div className="rounded-2xl border border-ink-200/70 bg-white p-10 text-center text-sm text-ink-500 shadow-card">
+              No pharmacies available yet.
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 };

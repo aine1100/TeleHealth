@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { Building2, FlaskConical, ShieldPlus, UserRound } from 'lucide-react';
+import { Building2, FlaskConical, ShieldPlus, Store, UserRound } from 'lucide-react';
 import AuthLayout from '../../components/auth/AuthLayout';
 
 const roles = [
@@ -15,6 +15,12 @@ const roles = [
     title: 'Clinic / Hospital',
     description: 'Onboard your facility and invite doctors to your team.',
     icon: Building2
+  },
+  {
+    to: '/register/pharmacy',
+    title: 'Pharmacy',
+    description: 'List your pharmacy, manage inventory, and fulfil prescriptions.',
+    icon: Store
   },
   {
     to: '/register/lab',

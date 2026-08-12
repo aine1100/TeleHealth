@@ -1,7 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useMemo, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Clock3, RefreshCw } from 'lucide-react';
-import AppointmentDetailModal from './AppointmentDetailModal';
 import {
   HOUR_HEIGHT,
   HOURS_END,
@@ -41,18 +40,17 @@ const AppointmentCalendarView = ({
   onRefresh,
   title = 'Appointments',
   subtitle = 'Your consultation calendar.',
-  viewAs = 'patient',
   getParticipantName,
   getParticipantSubtitle,
   getParticipantInitials,
-  renderListActions,
-  bookLink
+  bookLink,
+  detailPathPrefix
 }) => {
+  const navigate = useNavigate();
   const [selectedDate, setSelectedDate] = useState(() => startOfDay(new Date()));
   const [monthCursor, setMonthCursor] = useState(() => startOfDay(new Date()));
   const [weekCursor, setWeekCursor] = useState(() => startOfDay(new Date()));
   const [typeFilter, setTypeFilter] = useState('all');
-  const [detailAppointment, setDetailAppointment] = useState(null);
 
   const filtered = useMemo(() => {
     if (typeFilter === 'all') return appointments;
@@ -80,17 +78,10 @@ const AppointmentCalendarView = ({
     return map;
   }, [filtered]);
 
-  const openDetail = (appt) => setDetailAppointment(appt);
-  const closeDetail = () => setDetailAppointment(null);
-
-  const detailId = detailAppointment?._id;
-
-  useEffect(() => {
-    if (!detailId) return;
-    const updated = appointments.find((item) => item._id === detailId);
-    if (!updated) setDetailAppointment(null);
-    else setDetailAppointment(updated);
-  }, [appointments, detailId]);
+  const openDetail = (appt) => {
+    if (!detailPathPrefix || !appt?._id) return;
+    navigate(`${detailPathPrefix.replace(/\/$/, '')}/${appt._id}`);
+  };
 
   const goToday = () => {
     const today = startOfDay(new Date());
@@ -145,7 +136,7 @@ const AppointmentCalendarView = ({
             <p className="text-[10px] text-ink-400">– {layout.endTimeLabel}</p>
           </div>
         </div>
-        <p className="mt-2 text-[10px] font-medium text-brand-600">Tap for details</p>
+        <p className="mt-2 text-[10px] font-medium text-brand-600">Open details →</p>
       </button>
     );
   };
@@ -292,7 +283,7 @@ const AppointmentCalendarView = ({
           </div>
 
           <p className="border-b border-ink-50 px-4 py-2 text-xs text-ink-500 sm:px-6">
-            Click any appointment block to view full details.
+            Click any appointment to open the full details page.
           </p>
 
           <div className="overflow-x-auto">
@@ -349,16 +340,13 @@ const AppointmentCalendarView = ({
                         if (layout.endMin <= HOURS_START * 60 || layout.startMin >= (HOURS_END + 1) * 60) return null;
                         const style = getTypeStyle(appt.type);
                         const statusClass = statusStyles[appt.status] || statusStyles.pending;
-                        const isActive = detailAppointment?._id === appt._id;
                         return (
                           <button
                             key={`${key}-${appt._id}`}
                             type="button"
                             onClick={() => openDetail(appt)}
                             title="View appointment details"
-                            className={`absolute left-1 right-1 overflow-hidden rounded-xl border px-2 py-1.5 text-left shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${style.block} ${
-                              isActive ? 'ring-2 ring-brand-500/50' : ''
-                            }`}
+                            className={`absolute left-1 right-1 overflow-hidden rounded-xl border px-2 py-1.5 text-left shadow-sm transition hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${style.block}`}
                             style={{ top: layout.top, height: layout.height, minHeight: 36 }}
                           >
                             <p className="truncate text-[11px] font-bold leading-tight">{getParticipantName(appt)}</p>
@@ -381,14 +369,6 @@ const AppointmentCalendarView = ({
           </div>
         </section>
       </div>
-
-      <AppointmentDetailModal
-        open={Boolean(detailAppointment)}
-        onClose={closeDetail}
-        appointment={detailAppointment}
-        viewAs={viewAs}
-        renderActions={renderListActions ? (appt) => renderListActions(appt, closeDetail) : undefined}
-      />
     </div>
   );
 };

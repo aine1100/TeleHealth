@@ -174,7 +174,7 @@ const ProfileMenu = ({ user, facilityName, onLogout }) => {
 };
 
 const ClinicHeader = ({ onMenuClick }) => {
-  const { user, logout } = useAuth();
+  const { user, requestLogout} = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
 
@@ -186,8 +186,7 @@ const ClinicHeader = ({ onMenuClick }) => {
   const firstName = user?.firstName || 'there';
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    requestLogout(() => navigate('/login'));
   };
 
   const onSearchSubmit = (e) => {

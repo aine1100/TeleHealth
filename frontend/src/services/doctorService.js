@@ -16,6 +16,11 @@ export const doctorService = {
     return response.data;
   },
 
+  async saveCarePlan(id, payload) {
+    const response = await api.put(`/api/appointments/${id}/care-plan`, payload);
+    return response.data;
+  },
+
   async getAccount() {
     const response = await api.get('/api/doctors/me');
     return response.data;

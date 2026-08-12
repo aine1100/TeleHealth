@@ -30,6 +30,7 @@ exports.createUserResponse = (user, accessToken, refreshToken) => ({
     organizationProfile: user.organizationProfile || null,
     clinicProfile: user.clinicProfile || null,
     doctorProfile: user.doctorProfile || null,
+    pharmacyProfile: user.pharmacyProfile || null,
     notificationSettings: user.notificationSettings || null
   }
 });

@@ -3,6 +3,9 @@ export const patientNav = {
     { to: '/patient/home', label: 'Overview', icon: 'LayoutDashboard' },
     { to: '/patient/doctors', label: 'Find a doctor', icon: 'Stethoscope' },
     { to: '/patient/appointments', label: 'Appointments', icon: 'CalendarDays' },
+    { to: '/patient/care', label: 'Prescriptions & tests', icon: 'ClipboardList' },
+    { to: '/patient/pharmacies', label: 'Pharmacies', icon: 'Store' },
+    { to: '/patient/orders', label: 'Pharmacy orders', icon: 'ShoppingBag' },
     { to: '/patient/medicines', label: 'Medicine reminders', icon: 'Pill' },
     { to: '/patient/ai-screening', label: 'AI screening', icon: 'Sparkles' }
   ],

@@ -147,15 +147,14 @@ const ProfileMenu = ({ user, specialty, onLogout }) => {
 };
 
 const DoctorHeader = ({ onMenuClick }) => {
-  const { user, logout } = useAuth();
+  const { user, requestLogout} = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const specialty = user?.doctorProfile?.specialty || 'Care provider';
   const firstName = user?.firstName || 'Doctor';
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    requestLogout(() => navigate('/login'));
   };
 
   const onSearchSubmit = (e) => {

@@ -24,12 +24,11 @@ const iconMap = {
 };
 
 const AdminSidebar = ({ open, onClose }) => {
-  const { user, logout } = useAuth();
+  const { user, requestLogout} = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    requestLogout(() => navigate('/login'));
   };
 
   const linkClass = ({ isActive }) =>

@@ -294,6 +294,7 @@ exports.submitSupportRequest = async (user, { subject, message, category }) => {
       facilityName:
         user.organizationProfile?.organizationName ||
         user.clinicProfile?.clinicName ||
+        user.pharmacyProfile?.pharmacyName ||
         user.doctorProfile?.hospital ||
         (user.role === 'admin' ? 'Super admin' : '—'),
       role: user.role

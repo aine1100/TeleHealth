@@ -51,6 +51,8 @@ router.post('/', authenticate, appointmentController.createAppointment);
  */
 router.get('/my-appointments', authenticate, appointmentController.getMyAppointments);
 
+router.get('/care-records', authenticate, appointmentController.getPatientCareRecords);
+
 router.get('/waiting-queue', authenticate, appointmentController.getDoctorWaitingQueue);
 
 /**
@@ -201,5 +203,7 @@ router.patch('/:id/status', authenticate, appointmentController.updateAppointmen
  *         description: Waiting room joined successfully
  */
 router.post('/:id/join-waiting', authenticate, appointmentController.joinWaitingRoom);
+
+router.put('/:id/care-plan', authenticate, appointmentController.saveConsultationCarePlan);
 
 module.exports = router;

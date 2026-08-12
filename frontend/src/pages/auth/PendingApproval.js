@@ -13,7 +13,7 @@ import {
 
 const PendingApproval = () => {
   const navigate = useNavigate();
-  const { user, logout, fetchUser, loading } = useAuth();
+  const { user, requestLogout, fetchUser, loading } = useAuth();
   const status = getVerificationStatus(user);
 
   useEffect(() => {
@@ -32,8 +32,7 @@ const PendingApproval = () => {
   }, [user, loading, navigate]);
 
   const handleLogout = () => {
-    logout();
-    navigate('/login', { replace: true });
+    requestLogout(() => navigate('/login', { replace: true }));
   };
 
   const handleRefresh = async () => {

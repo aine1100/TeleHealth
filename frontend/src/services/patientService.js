@@ -31,6 +31,11 @@ export const patientService = {
     return response.data;
   },
 
+  async getCareRecords() {
+    const response = await api.get('/api/appointments/care-records');
+    return response.data;
+  },
+
   async createAppointment(payload) {
     const response = await api.post('/api/appointments', payload);
     return response.data;

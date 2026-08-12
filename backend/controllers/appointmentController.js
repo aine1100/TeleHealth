@@ -206,3 +206,25 @@ exports.uploadConsultChatFile = async (req, res) => {
     });
   }
 };
+
+exports.saveConsultationCarePlan = async (req, res) => {
+  try {
+    const appointment = await appointmentService.saveConsultationCarePlan({
+      user: req.user,
+      appointmentId: req.params.id,
+      body: req.body
+    });
+    res.json({ success: true, data: appointment });
+  } catch (error) {
+    sendErrorResponse(res, error, { logLabel: 'CarePlan' });
+  }
+};
+
+exports.getPatientCareRecords = async (req, res) => {
+  try {
+    const records = await appointmentService.getPatientCareRecords(req.user);
+    res.json({ success: true, count: records.length, data: records });
+  } catch (error) {
+    sendErrorResponse(res, error, { logLabel: 'CarePlan' });
+  }
+};

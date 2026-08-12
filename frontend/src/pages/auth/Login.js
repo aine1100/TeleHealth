@@ -1,28 +1,36 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import AuthLayout from '../../components/auth/AuthLayout';
-import { Alert, TextInput, SubmitButton } from '../../components/auth/FormFields';
+import { TextInput, SubmitButton } from '../../components/auth/FormFields';
 import { useAuth } from '../../context/AuthContext';
 
 const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, resolveHomePath } = useAuth();
+  const { login, resolveHomePath, user, loading: authLoading } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (authLoading || !user) return;
+    const home = resolveHomePath(user);
+    const requested = location.state?.from;
+    const allowRequested =
+      requested &&
+      home !== '/pending-approval' &&
+      !String(requested).startsWith('/pending-approval');
+    navigate(allowRequested ? requested : home, { replace: true });
+  }, [authLoading, user, location.state?.from, navigate, resolveHomePath]);
 
   const onChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
   const onSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
     try {
       const data = await login(form.email, form.password);
       toast.success('Welcome back');
-      // Never send unapproved orgs to clinic/lab dashboards
       const home = resolveHomePath(data.user);
       const requested = location.state?.from;
       const allowRequested =
@@ -33,9 +41,8 @@ const Login = () => {
     } catch (err) {
       const data = err.response?.data;
       const message = data?.message || 'Unable to log in';
-      setError(message);
+      toast.error(message);
       if (data?.code === 'EMAIL_NOT_VERIFIED') {
-        toast.error(message);
         navigate('/verify-email', {
           replace: false,
           state: { email: data.email || form.email }
@@ -59,7 +66,6 @@ const Login = () => {
         </>
       }
     >
-      <Alert>{error}</Alert>
       <form className="space-y-4" onSubmit={onSubmit}>
         <TextInput
           label="Email"
@@ -86,7 +92,7 @@ const Login = () => {
             Forgot password?
           </Link>
         </div>
-        <SubmitButton loading={loading}>Log in</SubmitButton>
+        <SubmitButton loading={loading || authLoading}>Log in</SubmitButton>
       </form>
     </AuthLayout>
   );

@@ -99,6 +99,26 @@ const userSchema = new mongoose.Schema({
     }
   },
 
+  // For Pharmacists
+  pharmacyProfile: {
+    pharmacyName: { type: String },
+    licenseNumber: { type: String },
+    phone: { type: String },
+    address: { type: String },
+    city: { type: String },
+    district: { type: String },
+    description: { type: String },
+    openingHours: {
+      start: { type: String, default: '08:00' },
+      end: { type: String, default: '20:00' }
+    },
+    offersDelivery: { type: Boolean, default: true },
+    offersPickup: { type: Boolean, default: true },
+    deliveryFee: { type: Number, default: 5000 },
+    deliveryRadiusKm: { type: Number, default: 15 },
+    isOpen: { type: Boolean, default: true }
+  },
+
   organizationProfile: {
     organizationName: { type: String },
     organizationType: { type: String, enum: ['clinic', 'hospital', 'pharmacy', 'lab', 'insurance_company', 'other'] },
