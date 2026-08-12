@@ -2,12 +2,15 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   CalendarDays,
+  ClipboardList,
   LayoutDashboard,
   LifeBuoy,
   LogOut,
   Pill,
   Settings,
   Sparkles,
+  ShoppingBag,
+  Store,
   Stethoscope,
   UserRound,
   X
@@ -20,6 +23,9 @@ const iconMap = {
   LayoutDashboard,
   Stethoscope,
   CalendarDays,
+  ClipboardList,
+  Store,
+  ShoppingBag,
   Pill,
   Sparkles,
   UserRound,
@@ -28,12 +34,11 @@ const iconMap = {
 };
 
 const PatientSidebar = ({ open, onClose }) => {
-  const { user, logout } = useAuth();
+  const { user, requestLogout} = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    requestLogout(() => navigate('/login'));
   };
 
   const linkClass = ({ isActive }) =>

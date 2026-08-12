@@ -7,6 +7,7 @@ import {
   LifeBuoy,
   LogOut,
   Settings,
+  Store,
   UserRound,
   Users,
   X
@@ -19,6 +20,7 @@ const iconMap = {
   LayoutDashboard,
   CalendarDays,
   Users,
+  Store,
   Clock,
   UserRound,
   Settings,
@@ -26,13 +28,12 @@ const iconMap = {
 };
 
 const DoctorSidebar = ({ open, onClose }) => {
-  const { user, logout } = useAuth();
+  const { user, requestLogout} = useAuth();
   const navigate = useNavigate();
   const specialty = user?.doctorProfile?.specialty || 'Doctor portal';
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    requestLogout(() => navigate('/login'));
   };
 
   const linkClass = ({ isActive }) =>

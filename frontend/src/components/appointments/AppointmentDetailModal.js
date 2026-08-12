@@ -160,6 +160,50 @@ const AppointmentDetailModal = ({
             </div>
           ) : null}
 
+          {appointment.diagnosis ? (
+            <div className="mt-3 rounded-xl border border-ink-100 bg-ink-50/60 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">Diagnosis</p>
+              <p className="mt-1 text-sm text-ink-800">{appointment.diagnosis}</p>
+            </div>
+          ) : null}
+
+          {appointment.prescription?.length ? (
+            <div className="mt-3 rounded-xl border border-brand-100 bg-brand-50/40 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">Prescription</p>
+              <ul className="mt-1.5 space-y-1.5">
+                {appointment.prescription.map((rx, index) => (
+                  <li key={`modal-rx-${index}`} className="text-sm text-ink-800">
+                    <span className="font-semibold">{rx.medicineName}</span>
+                    {[rx.dosage, rx.frequency, rx.duration].filter(Boolean).length ? (
+                      <span className="text-ink-600">
+                        {' '}
+                        · {[rx.dosage, rx.frequency, rx.duration].filter(Boolean).join(' · ')}
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {appointment.labOrders?.length ? (
+            <div className="mt-3 rounded-xl border border-ink-100 bg-ink-50/60 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">Lab tests</p>
+              <ul className="mt-1.5 space-y-1">
+                {appointment.labOrders.map((lab, index) => (
+                  <li key={`modal-lab-${index}`} className="text-sm text-ink-800">
+                    {lab.testName}
+                    {lab.status ? (
+                      <span className="ml-1 text-xs capitalize text-ink-500">
+                        ({String(lab.status).replace(/_/g, ' ')})
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           {renderActions ? (
             <div className="mt-3 border-t border-ink-100 pt-3">{renderActions(appointment)}</div>
           ) : null}

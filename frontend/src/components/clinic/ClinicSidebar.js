@@ -28,7 +28,7 @@ const iconMap = {
 };
 
 const ClinicSidebar = ({ open, onClose }) => {
-  const { user, logout } = useAuth();
+  const { user, requestLogout} = useAuth();
   const navigate = useNavigate();
 
   const facilityName =
@@ -37,8 +37,7 @@ const ClinicSidebar = ({ open, onClose }) => {
     'Alive Care Hospital';
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    requestLogout(() => navigate('/login'));
   };
 
   const linkClass = ({ isActive }) =>

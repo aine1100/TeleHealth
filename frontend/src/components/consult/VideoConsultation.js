@@ -15,7 +15,7 @@ const idOf = (value) => (value == null ? '' : String(value));
 
 const describeMediaError = (error) => {
   if (!isSecureAppContext()) {
-    return 'Camera blocked: open https://SERVER-IP:3000 (not http), accept the certificate, then allow camera.';
+    return 'Camera blocked on this URL. On this PC use http://localhost:3000. On another device run `npm run start:https` and open https://SERVER-IP:3000 (accept the certificate), then allow camera.';
   }
   if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
     return 'Camera permission denied. Allow camera in the address bar, then refresh.';

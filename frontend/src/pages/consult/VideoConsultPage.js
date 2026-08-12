@@ -42,8 +42,12 @@ const VideoConsultPage = ({ role = 'patient' }) => {
   const userName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || (role === 'doctor' ? 'Doctor' : 'Patient');
 
   const handleEnded = useCallback(() => {
+    if (role === 'doctor') {
+      navigate(`/doctor/appointments/${appointmentId}/care-plan`);
+      return;
+    }
     navigate(backPath);
-  }, [navigate, backPath]);
+  }, [navigate, backPath, role, appointmentId]);
 
   if (loading || !user?._id) {
     return <p className="py-20 text-center text-sm text-ink-500">Loading consultation…</p>;

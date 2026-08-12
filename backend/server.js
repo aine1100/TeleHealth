@@ -27,6 +27,7 @@ const paymentRoutes = require('./routes/payments');
 const medicineRoutes = require('./routes/medicines');
 const notificationRoutes = require('./routes/notifications');
 const patientRoutes = require('./routes/patients');
+const pharmacyRoutes = require('./routes/pharmacies');
 
 const app = express();
 const server = http.createServer(app);
@@ -213,6 +214,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/medicines', medicineRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/patients', patientRoutes);
+app.use('/api/pharmacies', pharmacyRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

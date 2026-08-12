@@ -11,7 +11,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
 require('dotenv').config();
 
 const mongoose = require('mongoose');
-const { User } = require('../models');
+const { User, PharmacyMedicine } = require('../models');
 
 const log = (...args) => console.log('🌱', ...args);
 
@@ -276,8 +276,96 @@ const seedPharmacist = async () =>
     isActive: true,
     isEmailVerified: true,
     isPhoneVerified: true,
-    city: 'Kampala'
+    city: 'Kampala',
+    district: 'Kampala',
+    address: 'Plot 12, Kampala Road',
+    pharmacyProfile: {
+      pharmacyName: 'Alive Care Pharmacy',
+      licenseNumber: 'PHARM-UG-001',
+      phone: '+256700000060',
+      address: 'Plot 12, Kampala Road',
+      city: 'Kampala',
+      district: 'Kampala',
+      description: 'Community pharmacy for prescription fulfilment, OTC medicines, and home delivery.',
+      openingHours: { start: '08:00', end: '20:00' },
+      offersDelivery: true,
+      offersPickup: true,
+      deliveryFee: 5000,
+      deliveryRadiusKm: 15,
+      isOpen: true
+    },
+    organizationProfile: {
+      organizationName: 'Alive Care Pharmacy',
+      organizationType: 'pharmacy',
+      registrationNumber: 'PHARM-UG-001',
+      contactPerson: 'Mary Pharmacy',
+      city: 'Kampala',
+      district: 'Kampala',
+      address: 'Plot 12, Kampala Road',
+      verificationStatus: 'approved'
+    }
   });
+
+const seedPharmacyMedicines = async (pharmacyId) => {
+  const samples = [
+    {
+      name: 'Amoxicillin',
+      genericName: 'Amoxicillin',
+      brandName: 'Amoxil',
+      description: 'Broad-spectrum antibiotic for bacterial infections.',
+      form: 'capsule',
+      strength: '500mg',
+      category: 'Antibiotics',
+      price: 12000,
+      stockQuantity: 120,
+      reorderLevel: 20,
+      requiresPrescription: true
+    },
+    {
+      name: 'Paracetamol',
+      genericName: 'Acetaminophen',
+      brandName: 'Panadol',
+      description: 'Pain relief and fever reduction.',
+      form: 'tablet',
+      strength: '500mg',
+      category: 'Pain relief',
+      price: 3000,
+      stockQuantity: 250,
+      reorderLevel: 40,
+      requiresPrescription: false
+    },
+    {
+      name: 'ORS Sachets',
+      genericName: 'Oral rehydration salts',
+      description: 'Rehydration therapy for diarrhoea and dehydration.',
+      form: 'other',
+      strength: '20.5g',
+      category: 'First aid',
+      price: 1500,
+      stockQuantity: 80,
+      reorderLevel: 15,
+      requiresPrescription: false
+    }
+  ];
+
+  for (const sample of samples) {
+    const existing = await PharmacyMedicine.findOne({ pharmacy: pharmacyId, name: sample.name });
+    if (existing) {
+      Object.assign(existing, sample, { isActive: true });
+      await existing.save();
+    } else {
+      await PharmacyMedicine.create({
+        ...sample,
+        pharmacy: pharmacyId,
+        createdBy: pharmacyId,
+        updatedBy: pharmacyId,
+        isActive: true
+      });
+    }
+  }
+
+  log(`Pharmacy medicines ready for ${pharmacyId}`);
+};
 
 const run = async () => {
   const uri = process.env.MONGODB_URI;
@@ -296,6 +384,7 @@ const run = async () => {
   const lab = await seedLab();
   const insurance = await seedInsurance();
   const pharmacist = await seedPharmacist();
+  await seedPharmacyMedicines(pharmacist._id);
 
   console.log('\n✅ Seed complete');
   console.log('────────────────────────────────────────────────────────');

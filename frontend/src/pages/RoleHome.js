@@ -5,11 +5,10 @@ import BrandLogo from '../components/BrandLogo';
 
 const RoleHome = ({ title, blurb }) => {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, requestLogout} = useAuth();
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    requestLogout(() => navigate('/login'));
   };
 
   return (

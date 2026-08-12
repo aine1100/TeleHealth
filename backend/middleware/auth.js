@@ -73,7 +73,7 @@ const authorizeOwnerOrAdmin = (getOwnerId) => {
   };
 };
 
-const ORG_ROLES = ['clinic_admin', 'lab_tech', 'insurance'];
+const ORG_ROLES = ['clinic_admin', 'lab_tech', 'insurance', 'pharmacist'];
 
 /** Block dashboard APIs until super admin approves the organization */
 const requireApprovedOrganization = (req, res, next) => {

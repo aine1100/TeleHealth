@@ -144,6 +144,14 @@ router.post(
   authController.registerUser
 );
 
+router.post(
+  '/register/pharmacy',
+  upload.array('documents', 5),
+  sharedValidation,
+  withForcedRole('pharmacist'),
+  authController.registerUser
+);
+
 router.get(
   '/organizations/pending',
   authenticate,

@@ -1,9 +1,27 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Bell, CalendarDays, ChevronDown, LogOut, Menu, Search, Settings, UserRound } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Bell,
+  ChevronDown,
+  CreditCard,
+  LogOut,
+  Menu,
+  Search,
+  Settings,
+  ShoppingBag,
+  UserRound
+} from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
+import { pharmacyService } from '../../services/pharmacyService';
 
-const HeaderMenu = ({ icon: Icon, label, items = [], emptyText, actionTo, actionLabel }) => {
+const pharmacyName = (row) =>
+  row?.displayName ||
+  row?.pharmacyProfile?.pharmacyName ||
+  [row?.firstName, row?.lastName].filter(Boolean).join(' ') ||
+  'Pharmacy';
+
+const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actionTo, actionLabel, onOpen }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
 
@@ -21,7 +39,11 @@ const HeaderMenu = ({ icon: Icon, label, items = [], emptyText, actionTo, action
         type="button"
         aria-label={label}
         title={label}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) onOpen?.();
+        }}
         className={`relative flex h-10 w-10 items-center justify-center rounded-full border bg-white text-ink-600 transition ${
           open
             ? 'border-brand-300 text-brand-600 shadow-sm ring-4 ring-brand-500/10'
@@ -29,19 +51,50 @@ const HeaderMenu = ({ icon: Icon, label, items = [], emptyText, actionTo, action
         }`}
       >
         <Icon size={17} strokeWidth={1.9} />
+        {count > 0 ? (
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand-500 px-1 text-[9px] font-bold text-white">
+            {count > 9 ? '9+' : count}
+          </span>
+        ) : null}
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-30 mt-2 w-[300px] overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.1)] animate-fade-up">
-          <div className="border-b border-ink-100 px-4 py-3">
+        <div className="absolute right-0 z-30 mt-2 w-[320px] overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.1)] animate-fade-up sm:w-[340px]">
+          <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
             <p className="text-sm font-bold text-ink-900">{label}</p>
+            {count > 0 ? (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                {count} unpaid
+              </span>
+            ) : null}
           </div>
-          <div className="max-h-72 overflow-y-auto">
+          <div className="max-h-80 overflow-y-auto">
             {items.length ? (
               items.map((item) => (
                 <div key={item.id} className="border-b border-ink-100 px-4 py-3 last:border-0 hover:bg-ink-50">
-                  <p className="text-sm font-semibold text-ink-900">{item.title}</p>
-                  <p className="mt-0.5 text-xs text-ink-500">{item.meta}</p>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-ink-900">{item.title}</p>
+                      <p className="mt-0.5 text-xs text-ink-500">{item.meta}</p>
+                    </div>
+                    {item.onPay ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOpen(false);
+                          item.onPay();
+                        }}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-brand-500 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-brand-600"
+                      >
+                        <CreditCard size={12} />
+                        Pay
+                      </button>
+                    ) : (
+                      <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        Paid
+                      </span>
+                    )}
+                  </div>
                 </div>
               ))
             ) : (
@@ -144,14 +197,31 @@ const ProfileMenu = ({ user, onLogout }) => {
 };
 
 const PatientHeader = ({ onMenuClick }) => {
-  const { user, logout } = useAuth();
+  const { user, requestLogout } = useAuth();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
+  const [orders, setOrders] = useState([]);
   const firstName = user?.firstName || 'there';
 
+  const loadOrders = useCallback(async () => {
+    try {
+      const res = await pharmacyService.getMyOrders();
+      setOrders(res?.data || []);
+    } catch {
+      // keep header quiet
+    }
+  }, []);
+
+  useEffect(() => {
+    loadOrders();
+    const timer = setInterval(loadOrders, 60000);
+    return () => clearInterval(timer);
+  }, [loadOrders]);
+
+  const unpaidOrders = orders.filter((order) => order.payment?.status !== 'paid');
+
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    requestLogout(() => navigate('/login'));
   };
 
   const onSearchSubmit = (e) => {
@@ -160,6 +230,30 @@ const PatientHeader = ({ onMenuClick }) => {
     if (!q) return;
     navigate(`/patient/doctors?q=${encodeURIComponent(q)}`);
   };
+
+  const payQuick = async (order) => {
+    try {
+      await pharmacyService.payOrder(order._id, {
+        method: 'mtn_momo',
+        phoneNumber: user?.phone || '+256700000000'
+      });
+      toast.success('Payment successful — order sent to pharmacy');
+      await loadOrders();
+      navigate('/patient/orders');
+    } catch (error) {
+      toast.error(error?.response?.data?.message || 'Unable to pay order');
+      navigate('/patient/orders');
+    }
+  };
+
+  const orderItems = orders.slice(0, 6).map((order) => ({
+    id: order._id,
+    title: pharmacyName(order.pharmacy),
+    meta: `${order.orderType === 'catalog' ? 'Catalog' : 'Rx'} · UGX ${Number(order.totalAmount || 0).toLocaleString()} · ${
+      order.payment?.status === 'paid' ? 'Paid' : 'Awaiting payment'
+    }`,
+    onPay: order.payment?.status !== 'paid' ? () => payQuick(order) : null
+  }));
 
   return (
     <header className="sticky top-0 z-20 shrink-0 border-b border-ink-200/70 bg-white/90 backdrop-blur-md">
@@ -194,12 +288,14 @@ const PatientHeader = ({ onMenuClick }) => {
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <HeaderMenu
-            icon={CalendarDays}
-            label="Appointments"
-            items={[]}
-            emptyText="No upcoming appointments"
-            actionTo="/patient/appointments"
-            actionLabel="View appointments"
+            icon={ShoppingBag}
+            label="Pharmacy orders"
+            count={unpaidOrders.length}
+            items={orderItems}
+            emptyText="No pharmacy orders yet"
+            actionTo="/patient/orders"
+            actionLabel="View all orders"
+            onOpen={loadOrders}
           />
           <HeaderMenu
             icon={Bell}

@@ -1,6 +1,6 @@
 const { User, Appointment } = require('../models');
 
-const ORG_ROLES = ['clinic_admin', 'lab_tech', 'insurance'];
+const ORG_ROLES = ['clinic_admin', 'lab_tech', 'insurance', 'pharmacist'];
 
 const orgSelect =
   'firstName lastName email phone role isActive isEmailVerified createdAt organizationProfile clinicProfile lastLogin';

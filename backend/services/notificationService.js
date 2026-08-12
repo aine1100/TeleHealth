@@ -187,7 +187,80 @@ exports.notifyConsultationEnded = async (appointment) => {
     title: 'Consultation completed',
     message: `Your video visit with ${doctorName} has ended. Thank you for using Alive Health.`,
     relatedId: appointment._id,
-    actionUrl: `${PLATFORM_URL}/patient/appointments`,
-    actionLabel: 'View summary'
+    actionUrl: `${PLATFORM_URL}/patient/care`,
+    actionLabel: 'View care plan'
+  });
+};
+
+exports.notifyPrescriptionReady = async (appointment) => {
+  const patientId = appointment.patient?._id || appointment.patient;
+  const doctorName = formatDoctorName(appointment.doctor);
+  const count = appointment.prescription?.length || 0;
+
+  await exports.createNotification({
+    recipientId: patientId,
+    type: 'prescription_ready',
+    title: 'Prescription ready',
+    message: `${doctorName} issued ${count} medicine${count === 1 ? '' : 's'} for your visit.`,
+    relatedId: appointment._id,
+    actionUrl: `${PLATFORM_URL}/patient/care`,
+    actionLabel: 'View prescription',
+    priority: 'high'
+  });
+};
+
+exports.notifyLabOrdersReady = async (appointment) => {
+  const patientId = appointment.patient?._id || appointment.patient;
+  const doctorName = formatDoctorName(appointment.doctor);
+  const count = appointment.labOrders?.length || 0;
+
+  await exports.createNotification({
+    recipientId: patientId,
+    type: 'lab_results_ready',
+    title: 'Lab tests ordered',
+    message: `${doctorName} ordered ${count} lab test${count === 1 ? '' : 's'} for you.`,
+    relatedId: appointment._id,
+    actionUrl: `${PLATFORM_URL}/patient/care`,
+    actionLabel: 'View lab orders',
+    priority: 'high'
+  });
+};
+
+exports.notifyPharmacyOrderReceived = async (order) => {
+  const pharmacyId = order.pharmacy?._id || order.pharmacy;
+  const patientName = formatPersonName(order.patient);
+  const method = order.fulfillmentMethod === 'delivery' ? 'delivery' : 'onsite pickup';
+
+  await exports.createNotification({
+    recipientId: pharmacyId,
+    type: 'pharmacy_order_received',
+    title: order.orderType === 'catalog' ? 'New catalog order' : 'New prescription order',
+    message: `${patientName} paid for a ${order.orderType === 'catalog' ? 'catalog' : 'prescription'} order (${method}).`,
+    relatedModel: 'PharmacyOrder',
+    relatedId: order._id,
+    actionUrl: `${PLATFORM_URL}/pharmacy/orders`,
+    actionLabel: 'View orders',
+    priority: 'high'
+  });
+};
+
+exports.notifyPharmacyOrderUpdate = async (order) => {
+  const patientId = order.patient?._id || order.patient;
+  const pharmacyName =
+    order.pharmacy?.pharmacyProfile?.pharmacyName ||
+    formatPersonName(order.pharmacy) ||
+    'Pharmacy';
+  const status = String(order.status || '').replace(/_/g, ' ');
+
+  await exports.createNotification({
+    recipientId: patientId,
+    type: 'pharmacy_order_update',
+    title: 'Pharmacy order update',
+    message: `${pharmacyName} marked your order as ${status}.`,
+    relatedModel: 'PharmacyOrder',
+    relatedId: order._id,
+    actionUrl: `${PLATFORM_URL}/patient/orders`,
+    actionLabel: 'View order',
+    priority: 'normal'
   });
 };

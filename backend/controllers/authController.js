@@ -79,9 +79,14 @@ exports.registerUser = async (req, res) => {
     if (normalizedBody.clinicProfile) {
       normalizedBody.clinicProfile = parseMaybeJson(normalizedBody.clinicProfile);
     }
+    if (normalizedBody.pharmacyProfile) {
+      normalizedBody.pharmacyProfile = parseMaybeJson(normalizedBody.pharmacyProfile);
+    }
+
+    const orgRoles = ['clinic_admin', 'lab_tech', 'insurance', 'pharmacist'];
 
     // Organizations start pending super-admin review after registration
-    if (['clinic_admin', 'lab_tech', 'insurance'].includes(resolvedRole)) {
+    if (orgRoles.includes(resolvedRole)) {
       const orgProfile = normalizedBody.organizationProfile || {};
       normalizedBody.organizationProfile = {
         ...orgProfile,
@@ -93,7 +98,33 @@ exports.registerUser = async (req, res) => {
       normalizedBody.isEmailVerified = false;
     }
 
-    if (['clinic_admin', 'lab_tech', 'insurance'].includes(resolvedRole) && req.files && req.files.length) {
+    if (resolvedRole === 'pharmacist') {
+      const orgProfile = normalizedBody.organizationProfile || {};
+      const pharmacyProfile = normalizedBody.pharmacyProfile || {};
+      normalizedBody.pharmacyProfile = {
+        pharmacyName: pharmacyProfile.pharmacyName || orgProfile.organizationName || '',
+        licenseNumber: pharmacyProfile.licenseNumber || orgProfile.registrationNumber || '',
+        phone: pharmacyProfile.phone || phone,
+        address: pharmacyProfile.address || orgProfile.address || '',
+        city: pharmacyProfile.city || orgProfile.city || '',
+        district: pharmacyProfile.district || orgProfile.district || '',
+        description: pharmacyProfile.description || '',
+        offersDelivery: pharmacyProfile.offersDelivery !== false,
+        offersPickup: pharmacyProfile.offersPickup !== false,
+        isOpen: pharmacyProfile.isOpen !== false,
+        deliveryFee: pharmacyProfile.deliveryFee ?? 5000,
+        deliveryRadiusKm: pharmacyProfile.deliveryRadiusKm ?? 15,
+        openingHours: pharmacyProfile.openingHours || { start: '08:00', end: '20:00' }
+      };
+      if (!normalizedBody.organizationProfile?.organizationType) {
+        normalizedBody.organizationProfile = {
+          ...(normalizedBody.organizationProfile || {}),
+          organizationType: 'pharmacy'
+        };
+      }
+    }
+
+    if (orgRoles.includes(resolvedRole) && req.files && req.files.length) {
       const documents = [];
       for (const file of req.files) {
         const key = buildStorageKey('verification-documents', file.originalname);
@@ -177,7 +208,7 @@ exports.loginUser = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    const orgRoles = ['clinic_admin', 'lab_tech', 'insurance'];
+    const orgRoles = ['clinic_admin', 'lab_tech', 'insurance', 'pharmacist'];
     const isOrg = orgRoles.includes(user.role);
     const orgStatus = user.organizationProfile?.verificationStatus || 'pending';
 
@@ -265,7 +296,7 @@ exports.verifyEmail = async (req, res) => {
     user.isEmailVerified = true;
     user.isActive = true;
     // Organization approval is a separate gate — email verify alone never unlocks ops APIs
-    if (['clinic_admin', 'lab_tech', 'insurance'].includes(user.role)) {
+    if (['clinic_admin', 'lab_tech', 'insurance', 'pharmacist'].includes(user.role)) {
       if (!user.organizationProfile) user.organizationProfile = {};
       if (!user.organizationProfile.verificationStatus) {
         user.organizationProfile.verificationStatus = 'pending';
@@ -274,7 +305,7 @@ exports.verifyEmail = async (req, res) => {
     }
     await user.save();
 
-    const isOrg = ['clinic_admin', 'lab_tech', 'insurance'].includes(user.role);
+    const isOrg = ['clinic_admin', 'lab_tech', 'insurance', 'pharmacist'].includes(user.role);
     const orgStatus = user.organizationProfile?.verificationStatus || 'pending';
 
     res.json({

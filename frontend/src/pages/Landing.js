@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import BrandLogo from '../components/BrandLogo';
 
 const Landing = () => {
-  const { user, resolveHomePath, logout } = useAuth();
+  const { user, resolveHomePath, requestLogout} = useAuth();
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -30,7 +30,7 @@ const Landing = () => {
                 </Link>
                 <button
                   type="button"
-                  onClick={logout}
+                  onClick={() => requestLogout()}
                   className="rounded-lg border border-white/40 px-4 py-2.5 text-sm font-semibold text-white"
                 >
                   Log out

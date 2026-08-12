@@ -1,4 +1,4 @@
-export const ORG_ROLES = ['clinic_admin', 'lab_tech', 'insurance'];
+export const ORG_ROLES = ['clinic_admin', 'lab_tech', 'insurance', 'pharmacist'];
 
 export const isOrganizationRole = (role) => ORG_ROLES.includes(role);
 
@@ -14,6 +14,8 @@ export const roleHome = (role) => {
       return '/doctor/home';
     case 'clinic_admin':
       return '/clinic/home';
+    case 'pharmacist':
+      return '/pharmacy/home';
     case 'lab_tech':
       return '/lab/home';
     case 'insurance':
@@ -38,5 +40,6 @@ export const orgTypeLabel = (typeOrRole) => {
   if (typeOrRole === 'clinic' || typeOrRole === 'clinic_admin') return 'Clinic / Hospital';
   if (typeOrRole === 'lab' || typeOrRole === 'lab_tech') return 'Laboratory';
   if (typeOrRole === 'insurance') return 'Insurance';
+  if (typeOrRole === 'pharmacy' || typeOrRole === 'pharmacist') return 'Pharmacy';
   return 'Organization';
 };

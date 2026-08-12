@@ -6,12 +6,11 @@ import BottomNav from '../../components/BottomNav';
 import { useAuth } from '../../context/AuthContext';
 
 const PatientHome = () => {
-  const { user, logout } = useAuth();
+  const { user, requestLogout} = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
-    logout();
-    navigate('/login');
+    requestLogout(() => navigate('/login'));
   };
 
   const actions = [
