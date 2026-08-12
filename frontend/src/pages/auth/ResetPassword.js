@@ -37,7 +37,7 @@ const ResetPassword = () => {
   return (
     <AuthLayout
       title="Reset password"
-      subtitle="Enter the code from your email and choose a new password."
+      subtitle="Enter the code from your email and choose a new password. The code expires in 5 minutes."
       footer={
         <>
           Back to{' '}

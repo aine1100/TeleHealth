@@ -10,6 +10,8 @@ const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 
 const errorHandler = require('./middleware/errorHandler');
+const consultChatService = require('./services/consultChatService');
+const { User } = require('./models');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -20,18 +22,48 @@ const clinicRoutes = require('./routes/clinics');
 const paymentRoutes = require('./routes/payments');
 const medicineRoutes = require('./routes/medicines');
 const notificationRoutes = require('./routes/notifications');
+const patientRoutes = require('./routes/patients');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
+app.set('io', io);
 
 io.on('connection', (socket) => {
+  socket.on('join-user-room', ({ userId, role }) => {
+    if (!userId) return;
+    if (role === 'doctor') {
+      socket.join(`doctor-waiting-${userId}`);
+    }
+    if (role === 'patient') {
+      socket.join(`patient-${userId}`);
+    }
+  });
+
   socket.on('join-appointment-room', ({ appointmentId, userId, role }) => {
     if (!appointmentId) return;
     const roomName = `appointment-${appointmentId}`;
     socket.join(roomName);
     socket.data = { ...socket.data, appointmentId, userId, role };
     socket.to(roomName).emit('peer-joined', { userId, role });
+  });
+
+  socket.on('consult-chat-message', async ({ appointmentId, text }) => {
+    try {
+      if (!appointmentId || !socket.data?.userId) return;
+      const user = await User.findById(socket.data.userId).select('role firstName lastName');
+      if (!user) return;
+
+      const message = await consultChatService.sendChatMessage({
+        user,
+        appointmentId,
+        text
+      });
+
+      io.to(`appointment-${appointmentId}`).emit('consult-chat-message', message);
+    } catch (error) {
+      socket.emit('consult-chat-error', { message: error.message || 'Unable to send message' });
+    }
   });
 
   socket.on('offer', ({ appointmentId, offer, senderId }) => {
@@ -72,6 +104,7 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
 
 // Rate limiting
 const limiter = rateLimit({
@@ -124,6 +157,7 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/medicines', medicineRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/patients', patientRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

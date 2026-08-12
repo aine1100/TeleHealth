@@ -17,10 +17,11 @@ const errorHandler = (err, req, res, next) => {
     error = { message, statusCode: 400 };
   }
 
-  // Mongoose validation error
+  // Mongoose validation error — log details, return generic message
   if (err.name === 'ValidationError') {
-    const message = Object.values(err.errors).map(val => val.message).join(', ');
-    error = { message, statusCode: 400 };
+    const details = Object.values(err.errors).map((val) => val.message).join('; ');
+    console.error('Validation error details:', details);
+    error = { message: 'Invalid request data', statusCode: 400 };
   }
 
   // JWT errors
@@ -34,9 +35,15 @@ const errorHandler = (err, req, res, next) => {
     error = { message, statusCode: 401 };
   }
 
-  res.status(error.statusCode || 500).json({
+  const statusCode = error.statusCode || 500;
+  const message =
+    statusCode < 500
+      ? error.message || 'Invalid request'
+      : 'Something went wrong. Please try again.';
+
+  res.status(statusCode).json({
     success: false,
-    message: error.message || 'Server Error',
+    message,
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };

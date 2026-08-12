@@ -2,14 +2,6 @@ import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
-import Home from './pages/patient/Home';
-import FindDoctor from './pages/patient/FindDoctor';
-import Appointments from './pages/patient/Appointments';
-import Medicines from './pages/patient/Medicines';
-import Notifications from './pages/patient/Notifications';
-import Profile from './pages/patient/Profile';
-import AIScreening from './pages/patient/AIScreening';
-
 import Login from './pages/auth/Login';
 import RegisterSelect from './pages/auth/RegisterSelect';
 import RegisterPatient from './pages/auth/RegisterPatient';
@@ -35,6 +27,20 @@ import ClinicFacilityProfile from './pages/clinic/ClinicFacilityProfile';
 import ClinicSettings from './pages/clinic/ClinicSettings';
 import ClinicSupport from './pages/clinic/ClinicSupport';
 import ClinicPlaceholder from './pages/clinic/ClinicPlaceholder';
+
+import PatientLayout from './layouts/PatientLayout';
+import PatientOverview from './pages/patient/PatientOverview';
+import PatientDoctors from './pages/patient/PatientDoctors';
+import PatientBook from './pages/patient/PatientBook';
+import PatientAppointments from './pages/patient/PatientAppointments';
+import PatientMedicines from './pages/patient/PatientMedicines';
+import PatientScreening from './pages/patient/PatientScreening';
+import PatientProfile from './pages/patient/PatientProfile';
+import PatientSettings from './pages/patient/PatientSettings';
+import PatientSupport from './pages/patient/PatientSupport';
+import PatientNotifications from './pages/patient/PatientNotifications';
+import PatientWaitingRoom from './pages/consult/PatientWaitingRoom';
+import VideoConsultPage from './pages/consult/VideoConsultPage';
 
 import DoctorLayout from './layouts/DoctorLayout';
 import DoctorOverview from './pages/doctor/DoctorOverview';
@@ -106,19 +112,27 @@ function AppRoutes() {
       />
 
       <Route
-        path="/patient/home"
+        path="/patient"
         element={
           <ProtectedRoute roles={['patient']}>
-            <Home />
+            <PatientLayout />
           </ProtectedRoute>
         }
-      />
-      <Route path="/patient/doctors" element={<FindDoctor />} />
-      <Route path="/patient/appointments" element={<Appointments />} />
-      <Route path="/patient/medicines" element={<Medicines />} />
-      <Route path="/patient/notifications" element={<Notifications />} />
-      <Route path="/patient/profile" element={<Profile />} />
-      <Route path="/patient/ai-screening" element={<AIScreening />} />
+      >
+        <Route path="home" element={<PatientOverview />} />
+        <Route path="doctors" element={<PatientDoctors />} />
+        <Route path="doctors/:doctorId" element={<PatientBook />} />
+        <Route path="appointments" element={<PatientAppointments />} />
+        <Route path="waiting/:appointmentId" element={<PatientWaitingRoom />} />
+        <Route path="consult/:appointmentId" element={<VideoConsultPage role="patient" />} />
+        <Route path="medicines" element={<PatientMedicines />} />
+        <Route path="ai-screening" element={<PatientScreening />} />
+        <Route path="notifications" element={<PatientNotifications />} />
+        <Route path="profile" element={<PatientProfile />} />
+        <Route path="settings" element={<PatientSettings />} />
+        <Route path="support" element={<PatientSupport />} />
+        <Route index element={<Navigate to="home" replace />} />
+      </Route>
 
       <Route
         path="/clinic"
@@ -186,6 +200,7 @@ function AppRoutes() {
       >
         <Route path="home" element={<DoctorOverview />} />
         <Route path="appointments" element={<DoctorAppointments />} />
+        <Route path="consult/:appointmentId" element={<VideoConsultPage role="doctor" />} />
         <Route path="patients" element={<DoctorPatients />} />
         <Route path="profile" element={<DoctorProfile />} />
         <Route path="schedule" element={<DoctorSchedule />} />

@@ -110,6 +110,20 @@ const appointmentSchema = new mongoose.Schema({
     duration: { type: Number }, // seconds
     recordingUrl: { type: String }
   },
+
+  // In-consultation chat (video room)
+  consultChat: [{
+    sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    senderRole: { type: String, enum: ['patient', 'doctor'], required: true },
+    text: { type: String, default: '' },
+    attachment: {
+      url: { type: String },
+      fileName: { type: String },
+      mimeType: { type: String },
+      size: { type: Number }
+    },
+    createdAt: { type: Date, default: Date.now }
+  }],
   
   // Payment
   payment: {

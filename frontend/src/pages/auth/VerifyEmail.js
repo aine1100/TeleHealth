@@ -8,8 +8,9 @@ import { useAuth } from '../../context/AuthContext';
 const VerifyEmail = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { verifyEmail } = useAuth();
+  const { verifyEmail, resendVerificationOtp } = useAuth();
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({
     email: location.state?.email || '',
@@ -33,10 +34,27 @@ const VerifyEmail = () => {
     }
   };
 
+  const onResend = async () => {
+    if (!form.email) {
+      setError('Enter your email first');
+      return;
+    }
+    setError('');
+    setResending(true);
+    try {
+      await resendVerificationOtp(form.email);
+      toast.success('New code sent');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Unable to resend code');
+    } finally {
+      setResending(false);
+    }
+  };
+
   return (
     <AuthLayout
       title="Verify email"
-      subtitle="Enter the 6-digit code we sent to your inbox."
+      subtitle="Enter the 6-digit code we sent. It expires in 5 minutes."
       footer={
         <>
           Wrong email?{' '}
@@ -68,6 +86,14 @@ const VerifyEmail = () => {
           maxLength={6}
         />
         <SubmitButton loading={loading}>Verify account</SubmitButton>
+        <button
+          type="button"
+          onClick={onResend}
+          disabled={resending}
+          className="w-full text-center text-sm font-semibold text-brand-600 hover:text-brand-700 disabled:opacity-60"
+        >
+          {resending ? 'Sending…' : 'Resend code'}
+        </button>
       </form>
     </AuthLayout>
   );

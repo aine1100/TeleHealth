@@ -26,9 +26,10 @@ const twilioClient = process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_T
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
   : null;
 
-exports.sendVerificationEmail = async (email, otp) => {
+exports.sendVerificationEmail = async (email, otp, expiresInMinutes = 5) => {
   if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
     console.warn('Email credentials not configured. OTP not sent.');
+    console.info(`Verification OTP for ${email}: ${otp} (expires in ${expiresInMinutes} minutes)`);
     return { success: false, message: 'Email credentials not configured' };
   }
 
@@ -40,7 +41,7 @@ exports.sendVerificationEmail = async (email, otp) => {
       <h3>Welcome to Alive Health UG</h3>
       <p>Your verification code is:</p>
       <h2>${otp}</h2>
-      <p>This code will expire in 10 minutes.</p>
+      <p>This code expires in ${expiresInMinutes} minutes. Request a new one if it times out.</p>
     `
   };
 
@@ -48,14 +49,15 @@ exports.sendVerificationEmail = async (email, otp) => {
   return { success: true };
 };
 
-exports.sendOtpSms = async (phone, otp) => {
+exports.sendOtpSms = async (phone, otp, expiresInMinutes = 5) => {
   if (!twilioClient || !process.env.TWILIO_PHONE_NUMBER) {
     console.warn('Twilio SMS credentials not configured. OTP not sent.');
+    console.info(`SMS OTP for ${phone}: ${otp} (expires in ${expiresInMinutes} minutes)`);
     return { success: false, message: 'SMS credentials not configured' };
   }
 
   await twilioClient.messages.create({
-    body: `Your Alive Health UG verification code is ${otp}`,
+    body: `Your Alive Health UG code is ${otp}. It expires in ${expiresInMinutes} minutes.`,
     from: process.env.TWILIO_PHONE_NUMBER,
     to: phone
   });
@@ -63,12 +65,29 @@ exports.sendOtpSms = async (phone, otp) => {
   return { success: true };
 };
 
-exports.sendOtpNotification = async ({ email, phone, otp, channel }) => {
+exports.sendOtpNotification = async ({ email, phone, otp, channel, expiresInMinutes = 5 }) => {
   if (channel === 'phone') {
-    return exports.sendOtpSms(phone, otp);
+    return exports.sendOtpSms(phone, otp, expiresInMinutes);
   }
 
-  return exports.sendVerificationEmail(email, otp);
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn('Email credentials not configured. OTP not sent.');
+    console.info(`Password reset OTP for ${email}: ${otp} (expires in ${expiresInMinutes} minutes)`);
+    return { success: false, message: 'Email credentials not configured' };
+  }
+
+  await transporter.sendMail({
+    from: process.env.EMAIL_FROM || 'no-reply@alivehealth.ug',
+    to: email,
+    subject: 'Reset your Alive Health UG password',
+    html: `
+      <h3>Password reset</h3>
+      <p>Your reset code is:</p>
+      <h2>${otp}</h2>
+      <p>This code expires in ${expiresInMinutes} minutes.</p>
+    `
+  });
+  return { success: true };
 };
 
 exports.sendDoctorInviteEmail = async ({

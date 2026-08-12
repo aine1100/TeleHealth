@@ -1,15 +1,10 @@
 const { validationResult } = require('express-validator');
-const { User, Otp } = require('../models');
+const { User } = require('../models');
 const { buildStorageKey } = require('../services/storageService');
 const { uploadFileToR2 } = require('../services/r2Service');
 const { sendVerificationEmail, sendOtpNotification } = require('../utils/emailService');
-const {
-  signToken,
-  createRefreshToken,
-  createOtp,
-  hashValue,
-  createUserResponse
-} = require('../utils/authTokens');
+const { signToken, createRefreshToken, hashValue, createUserResponse, createOtp } = require('../utils/authTokens');
+const { OTP_TTL_MINUTES, issueOtp, assertCanResend, findValidOtp, rollbackRegistration } = require('../services/otpService');
 
 const PUBLIC_REGISTER_ROLES = new Set(['patient']);
 
@@ -47,6 +42,15 @@ exports.registerUser = async (req, res) => {
 
     const existingUser = await User.findOne({ $or: [{ email }, { phone }] });
     if (existingUser) {
+      if (!existingUser.isEmailVerified) {
+        return res.status(409).json({
+          success: false,
+          code: 'EMAIL_NOT_VERIFIED',
+          message:
+            'An account with this email or phone already exists but is not verified yet. Verify your email or request a new code.',
+          email: existingUser.email
+        });
+      }
       return res.status(400).json({ success: false, message: 'User already exists' });
     }
 
@@ -109,7 +113,6 @@ exports.registerUser = async (req, res) => {
       };
     }
 
-    const otpCode = createOtp();
     const user = new User(normalizedBody);
 
     // Super admins are ready after registration (no org approval gate)
@@ -134,19 +137,24 @@ exports.registerUser = async (req, res) => {
       });
     }
 
-    await Otp.create({
-      userId: user._id,
-      purpose: 'email_verification',
-      channel: 'email',
-      codeHash: hashValue(otpCode),
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000)
-    });
-
-    await sendVerificationEmail(user.email, otpCode);
+    const otpCode = createOtp();
+    try {
+      await sendVerificationEmail(user.email, otpCode, OTP_TTL_MINUTES);
+      await issueOtp({
+        userId: user._id,
+        purpose: 'email_verification',
+        channel: 'email',
+        code: otpCode
+      });
+    } catch (postSaveError) {
+      await rollbackRegistration(user._id);
+      throw postSaveError;
+    }
 
     res.status(201).json({
       success: true,
-      message: 'Account created. Please verify your email using the OTP sent to your inbox.',
+      message: `Account created. Please verify your email using the OTP sent to your inbox. It expires in ${OTP_TTL_MINUTES} minutes.`,
+      expiresInMinutes: OTP_TTL_MINUTES,
       user: {
         id: user._id,
         firstName: user.firstName,
@@ -232,14 +240,13 @@ exports.verifyEmail = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const otpRecord = await Otp.findOne({
+    const otpRecord = await findValidOtp({
       userId: user._id,
-      purpose: 'email_verification',
-      used: false
-    }).sort({ createdAt: -1 });
+      purpose: 'email_verification'
+    });
 
-    if (!otpRecord || otpRecord.expiresAt < new Date()) {
-      return res.status(400).json({ success: false, message: 'OTP expired or invalid' });
+    if (!otpRecord) {
+      return res.status(400).json({ success: false, message: 'OTP expired or invalid. Request a new code.' });
     }
 
     if (otpRecord.attempts >= 5) {
@@ -279,6 +286,44 @@ exports.verifyEmail = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.resendVerificationOtp = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    const user = await User.findOne({ email: String(email).toLowerCase().trim() });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (user.isEmailVerified) {
+      return res.status(400).json({ success: false, message: 'Email is already verified' });
+    }
+
+    await assertCanResend({ userId: user._id, purpose: 'email_verification' });
+
+    const otpCode = createOtp();
+    await sendVerificationEmail(user.email, otpCode, OTP_TTL_MINUTES);
+    await issueOtp({
+      userId: user._id,
+      purpose: 'email_verification',
+      channel: 'email',
+      code: otpCode
+    });
+
+    res.json({
+      success: true,
+      message: `A new code was sent. It expires in ${OTP_TTL_MINUTES} minutes.`,
+      expiresInMinutes: OTP_TTL_MINUTES
+    });
+  } catch (error) {
+    const status = error.statusCode || 500;
+    res.status(status).json({ success: false, message: error.message });
   }
 };
 
@@ -324,24 +369,24 @@ exports.forgotPassword = async (req, res) => {
     }
 
     const otpCode = createOtp();
-    await Otp.create({
-      userId: user._id,
-      purpose: 'password_reset',
-      channel,
-      codeHash: hashValue(otpCode),
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000)
-    });
-
     await sendOtpNotification({
       email: user.email,
       phone: user.phone,
       otp: otpCode,
-      channel
+      channel,
+      expiresInMinutes: OTP_TTL_MINUTES
+    });
+    await issueOtp({
+      userId: user._id,
+      purpose: 'password_reset',
+      channel,
+      code: otpCode
     });
 
     res.json({
       success: true,
-      message: `Password reset OTP sent via ${channel}`
+      message: `Password reset OTP sent via ${channel}. It expires in ${OTP_TTL_MINUTES} minutes.`,
+      expiresInMinutes: OTP_TTL_MINUTES
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -366,14 +411,13 @@ exports.resetPassword = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    const otpRecord = await Otp.findOne({
+    const otpRecord = await findValidOtp({
       userId: user._id,
-      purpose: 'password_reset',
-      used: false
-    }).sort({ createdAt: -1 });
+      purpose: 'password_reset'
+    });
 
-    if (!otpRecord || otpRecord.expiresAt < new Date()) {
-      return res.status(400).json({ success: false, message: 'Reset OTP expired or invalid' });
+    if (!otpRecord) {
+      return res.status(400).json({ success: false, message: 'Reset OTP expired or invalid. Request a new code.' });
     }
 
     if (otpRecord.attempts >= 5) {

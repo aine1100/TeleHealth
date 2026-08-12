@@ -362,11 +362,16 @@ exports.setupDoctorAccount = async ({
 
   await doctor.save();
 
-  invite.status = 'accepted';
-  invite.acceptedAt = new Date();
-  invite.doctorId = doctor._id;
-  invite.expiresAt = null;
-  await invite.save();
+  try {
+    invite.status = 'accepted';
+    invite.acceptedAt = new Date();
+    invite.doctorId = doctor._id;
+    invite.expiresAt = null;
+    await invite.save();
+  } catch (error) {
+    await User.deleteOne({ _id: doctor._id });
+    throw error;
+  }
 
   return doctor;
 };

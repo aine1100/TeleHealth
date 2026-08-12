@@ -86,7 +86,13 @@ const RegisterInsurance = () => {
       toast.success('Insurance partner registered. Verify your email.');
       navigate('/verify-email', { state: { email: form.email } });
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed');
+      const data = err.response?.data;
+      const message = data?.message || 'Registration failed';
+      setError(message);
+      if (data?.code === 'EMAIL_NOT_VERIFIED') {
+        toast.error(message);
+        navigate('/verify-email', { state: { email: data.email || form.email } });
+      }
     } finally {
       setLoading(false);
     }

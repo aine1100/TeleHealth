@@ -30,6 +30,18 @@ exports.getDoctorProfile = async (req, res) => {
   }
 };
 
+exports.getDoctorAvailability = async (req, res) => {
+  try {
+    const data = await doctorService.getDoctorAvailability(req.params.id, {
+      fromDate: req.query.from,
+      days: req.query.days
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(getErrorStatus(error)).json({ success: false, message: error.message });
+  }
+};
+
 exports.getMyAccount = async (req, res) => {
   try {
     const data = await doctorAccountService.getMyAccount(req.user);

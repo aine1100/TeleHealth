@@ -30,7 +30,7 @@ const ForgotPassword = () => {
   return (
     <AuthLayout
       title="Forgot password"
-      subtitle="Enter your email and we’ll send a reset code."
+      subtitle="Enter your email and we’ll send a reset code. It expires in 5 minutes."
       footer={
         <>
           Remembered it?{' '}

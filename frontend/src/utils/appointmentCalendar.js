@@ -8,7 +8,6 @@ import {
   isSameDay,
   isSameMonth,
   isToday,
-  parseISO,
   startOfDay,
   startOfMonth,
   startOfWeek,
@@ -17,7 +16,7 @@ import {
 
 export const HOURS_START = 8;
 export const HOURS_END = 18;
-export const HOUR_HEIGHT = 68;
+export const HOUR_HEIGHT = 52;
 
 export const typeStyles = {
   video: {
@@ -96,12 +95,35 @@ export const getEventLayout = (appointment) => {
   };
 };
 
-export const getAppointmentDate = (appointment) => {
-  if (!appointment?.scheduledDate) return null;
-  const raw = appointment.scheduledDate;
-  const date = typeof raw === 'string' ? parseISO(raw) : new Date(raw);
+/** Calendar date key YYYY-MM-DD — avoids timezone shifting booked days. */
+export const toDateKey = (date) => {
+  if (!date) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
+export const getAppointmentDateKey = (appointment) => {
+  const raw = appointment?.scheduledDate;
+  if (!raw) return null;
+
+  if (typeof raw === 'string') {
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (match) return match[1];
+  }
+
+  const date = raw instanceof Date ? raw : new Date(raw);
   if (Number.isNaN(date.getTime())) return null;
-  return startOfDay(date);
+
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+};
+
+export const getAppointmentDate = (appointment) => {
+  const key = getAppointmentDateKey(appointment);
+  if (!key) return null;
+  const [y, m, d] = key.split('-').map(Number);
+  return startOfDay(new Date(y, m - 1, d));
 };
 
 export const getPatientName = (appointment) => {

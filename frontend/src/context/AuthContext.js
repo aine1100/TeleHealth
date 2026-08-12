@@ -109,6 +109,11 @@ export const AuthProvider = ({ children }) => {
     return res.data;
   };
 
+  const resendVerificationOtp = async (email) => {
+    const res = await api.post('/api/auth/resend-otp', { email });
+    return res.data;
+  };
+
   const forgotPassword = async (identifier, channel = 'email') => {
     const res = await api.post('/api/auth/forgot-password', { identifier, channel });
     return res.data;
@@ -146,6 +151,7 @@ export const AuthProvider = ({ children }) => {
         registerLab,
         registerInsurance,
         verifyEmail,
+        resendVerificationOtp,
         forgotPassword,
         resetPassword,
         setupDoctor,

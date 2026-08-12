@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
+const consultUpload = require('../middleware/consultUpload');
 const appointmentController = require('../controllers/appointmentController');
-
 /**
  * @openapi
  * /api/appointments:
@@ -50,6 +50,28 @@ router.post('/', authenticate, appointmentController.createAppointment);
  *         description: Appointments fetched successfully
  */
 router.get('/my-appointments', authenticate, appointmentController.getMyAppointments);
+
+router.get('/waiting-queue', authenticate, appointmentController.getDoctorWaitingQueue);
+
+/**
+ * @openapi
+ * /api/appointments/{id}/waiting-room:
+ *   get:
+ *     summary: Get waiting room status for an appointment
+ *     tags: [Appointments]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/:id/waiting-room', authenticate, appointmentController.getWaitingRoomStatus);
+
+router.get('/:id/chat', authenticate, appointmentController.getConsultChat);
+router.post('/:id/chat', authenticate, appointmentController.sendConsultChatMessage);
+router.post(
+  '/:id/chat/upload',
+  authenticate,
+  consultUpload.single('file'),
+  appointmentController.uploadConsultChatFile
+);
 
 /**
  * @openapi

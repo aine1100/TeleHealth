@@ -41,6 +41,11 @@ export const clinicService = {
     return response.data;
   },
 
+  async updateAppointmentStatus(id, status) {
+    const response = await api.patch(`/api/appointments/${id}/status`, { status });
+    return response.data;
+  },
+
   async getSeatUsage() {
     const response = await api.get('/api/clinics/doctors/seats');
     return response.data;

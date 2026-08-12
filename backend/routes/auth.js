@@ -54,6 +54,7 @@ router.post('/refresh-token', authController.refreshToken);
  *     tags: [Auth]
  */
 router.post('/verify-email', authController.verifyEmail);
+router.post('/resend-otp', authController.resendVerificationOtp);
 
 /**
  * @openapi

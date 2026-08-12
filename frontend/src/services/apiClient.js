@@ -44,7 +44,7 @@ api.interceptors.response.use(
       clearAuthToken();
       if (typeof window !== 'undefined') {
         const path = window.location.pathname;
-        if (path.startsWith('/clinic') || path.startsWith('/admin')) {
+        if (path.startsWith('/clinic') || path.startsWith('/admin') || path.startsWith('/doctor') || path.startsWith('/patient')) {
           window.location.assign('/login');
         }
       }

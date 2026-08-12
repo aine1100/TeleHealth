@@ -1,5 +1,20 @@
-const { Appointment } = require('../models');
+const { Appointment, User } = require('../models');
 const { v4: uuidv4 } = require('uuid');
+const { buildAppointmentPayment } = require('../utils/apiErrors');
+const { assertSlotAvailable } = require('./doctorAvailabilityService');
+const notificationService = require('./notificationService');
+
+const emitWaitingRoomUpdate = (io, appointment) => {
+  if (!io || !appointment?.doctor) return;
+  const doctorId = appointment.doctor._id?.toString() || appointment.doctor.toString();
+  io.to(`doctor-waiting-${doctorId}`).emit('waiting-room-update', {
+    appointmentId: appointment._id.toString(),
+    patient: appointment.patient,
+    position: appointment.waitingRoom?.position,
+    patientsAhead: appointment.waitingRoom?.patientsAhead,
+    joinedAt: appointment.waitingRoom?.joinedAt
+  });
+};
 
 const buildAppointmentQueryForUser = (user) => {
   if (user.role === 'clinic_admin') {
@@ -26,9 +41,45 @@ exports.createAppointment = async ({ user, body }) => {
     throw error;
   }
 
+  const doctor = await User.findById(payload.doctor).select(
+    'role doctorProfile.clinicId doctorProfile.consultationFee'
+  );
+  if (!doctor || doctor.role !== 'doctor') {
+    const error = new Error('Doctor not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (!payload.clinic && doctor.doctorProfile?.clinicId) {
+    payload.clinic = doctor.doctorProfile.clinicId;
+  }
+
+  if (!payload.payment?.amount || !payload.payment?.totalAmount) {
+    payload.payment = buildAppointmentPayment(doctor.doctorProfile?.consultationFee, body.payment);
+  }
+
+  payload.scheduledTime = await assertSlotAvailable(
+    payload.doctor,
+    payload.scheduledDate,
+    payload.scheduledTime
+  );
+
+  if (typeof payload.scheduledDate === 'string') {
+    const match = payload.scheduledDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const [y, m, d] = match.slice(1).map(Number);
+      payload.scheduledDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+    }
+  }
+
+  payload.status = 'pending';
+
   const appointment = new Appointment(payload);
   await appointment.save();
   await appointment.populate('patient doctor', 'firstName lastName phone avatar');
+  notificationService.notifyAppointmentBooked(appointment).catch((err) => {
+    console.error('[Notification] appointment booked', err.message);
+  });
   return appointment;
 };
 
@@ -36,7 +87,7 @@ exports.getMyAppointments = async (user) => {
   const query = buildAppointmentQueryForUser(user);
 
   return Appointment.find(query)
-    .populate('patient doctor', 'firstName lastName phone avatar')
+    .populate('patient doctor', 'firstName lastName phone avatar doctorProfile.specialty doctorProfile.consultationFee')
     .sort({ scheduledDate: -1 });
 };
 
@@ -133,9 +184,8 @@ exports.deleteAppointment = async ({ user, appointmentId }) => {
   return { deleted: true, appointmentId };
 };
 
-exports.updateAppointmentStatus = async ({ user, appointmentId, body }) => {
+exports.updateAppointmentStatus = async ({ user, appointmentId, body, io }) => {
   const { status, reason, postponedTo, referredTo } = body;
-  const update = { status, updatedBy: user._id };
 
   if (!['confirmed', 'cancelled', 'postponed', 'referred'].includes(status)) {
     const error = new Error('Unsupported appointment status');
@@ -143,33 +193,6 @@ exports.updateAppointmentStatus = async ({ user, appointmentId, body }) => {
     throw error;
   }
 
-  if (status === 'cancelled') {
-    update.cancelledBy = user._id;
-    update.cancellationReason = reason;
-    update.cancelledAt = new Date();
-  }
-
-  if (status === 'postponed') {
-    update.postponedTo = postponedTo;
-    update.postponedReason = reason;
-    update.postponedAt = new Date();
-  }
-
-  if (status === 'referred') {
-    update.referral = { referredTo, reason, status: 'pending' };
-  }
-
-  const appointment = await Appointment.findByIdAndUpdate(appointmentId, update, { new: true });
-  if (!appointment) {
-    const error = new Error('Appointment not found');
-    error.statusCode = 404;
-    throw error;
-  }
-
-  return appointment;
-};
-
-exports.joinWaitingRoom = async ({ user, appointmentId }) => {
   const appointment = await Appointment.findById(appointmentId);
   if (!appointment) {
     const error = new Error('Appointment not found');
@@ -177,23 +200,210 @@ exports.joinWaitingRoom = async ({ user, appointmentId }) => {
     throw error;
   }
 
-  appointment.status = 'in_waiting_room';
-  appointment.waitingRoom = {
-    joinedAt: new Date(),
-    position: await Appointment.countDocuments({
-      doctor: appointment.doctor,
-      status: 'in_waiting_room',
-      'waitingRoom.joinedAt': { $lt: appointment.waitingRoom?.joinedAt || new Date() }
-    }) + 1,
-    estimatedWaitMinutes: 15,
-    patientsAhead: 2
-  };
+  const isDoctor = user.role === 'doctor' && appointment.doctor?.toString() === user._id.toString();
+  const isPatient = user.role === 'patient' && appointment.patient?.toString() === user._id.toString();
+  const isAdmin = user.role === 'admin';
+  const isClinic =
+    user.role === 'clinic_admin' && appointment.clinic?.toString() === user._id.toString();
+
+  if (status === 'confirmed') {
+    if (!isDoctor && !isAdmin && !isClinic) {
+      const error = new Error('Only the doctor can approve this appointment');
+      error.statusCode = 403;
+      throw error;
+    }
+    if (appointment.status !== 'pending') {
+      const error = new Error('Only pending appointments can be approved');
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  if (status === 'cancelled') {
+    const canCancel =
+      isAdmin ||
+      isClinic ||
+      isDoctor ||
+      (isPatient && ['pending', 'confirmed'].includes(appointment.status));
+    if (!canCancel) {
+      const error = new Error('Access denied');
+      error.statusCode = 403;
+      throw error;
+    }
+  }
+
+  if (['postponed', 'referred'].includes(status) && !isDoctor && !isAdmin && !isClinic) {
+    const error = new Error('Access denied');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  appointment.status = status;
+  appointment.updatedBy = user._id;
+
+  if (status === 'cancelled') {
+    appointment.cancelledBy = user._id;
+    appointment.cancellationReason = reason;
+    appointment.cancelledAt = new Date();
+  }
+
+  if (status === 'postponed') {
+    appointment.postponedTo = postponedTo;
+    appointment.postponedReason = reason;
+    appointment.postponedAt = new Date();
+  }
+
+  if (status === 'referred') {
+    appointment.referral = { referredTo, reason, status: 'pending' };
+  }
 
   await appointment.save();
+  await appointment.populate('patient doctor', 'firstName lastName phone avatar doctorProfile.specialty');
+
+  if (status === 'confirmed') {
+    notificationService.notifyAppointmentConfirmed(appointment).catch((err) => {
+      console.error('[Notification] appointment confirmed', err.message);
+    });
+  }
+
+  if (status === 'cancelled') {
+    notificationService.notifyAppointmentCancelled(appointment, { cancelledByRole: user.role }).catch((err) => {
+      console.error('[Notification] appointment cancelled', err.message);
+    });
+  }
+
   return appointment;
 };
 
-exports.startVideoCall = async ({ user, appointmentId }) => {
+const computeQueuePosition = async (appointment, joinedAt) => {
+  const patientsAhead = await Appointment.countDocuments({
+    doctor: appointment.doctor,
+    status: 'in_waiting_room',
+    'waitingRoom.joinedAt': { $lt: joinedAt },
+    _id: { $ne: appointment._id }
+  });
+
+  return {
+    position: patientsAhead + 1,
+    patientsAhead,
+    estimatedWaitMinutes: patientsAhead * 10 + 5
+  };
+};
+
+exports.joinWaitingRoom = async ({ user, appointmentId, io }) => {
+  const appointment = await Appointment.findById(appointmentId);
+  if (!appointment) {
+    const error = new Error('Appointment not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  if (user.role !== 'patient' || appointment.patient?.toString() !== user._id.toString()) {
+    const error = new Error('Only the patient can join the waiting room');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  if (!['confirmed', 'in_waiting_room'].includes(appointment.status)) {
+    const error = new Error('Only confirmed appointments can enter the waiting room');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  if (appointment.type !== 'video') {
+    const error = new Error('Waiting room is only available for video consultations');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const joinedAt = appointment.waitingRoom?.joinedAt || new Date();
+  const queue = await computeQueuePosition(appointment, joinedAt);
+
+  appointment.status = 'in_waiting_room';
+  appointment.waitingRoom = {
+    joinedAt,
+    position: queue.position,
+    patientsAhead: queue.patientsAhead,
+    estimatedWaitMinutes: queue.estimatedWaitMinutes
+  };
+
+  await appointment.save();
+  await appointment.populate('patient doctor', 'firstName lastName phone avatar doctorProfile.specialty');
+
+  notificationService.notifyWaitingRoomJoined(appointment).catch((err) => {
+    console.error('[Notification] waiting room joined', err.message);
+  });
+  emitWaitingRoomUpdate(io, appointment);
+
+  return appointment;
+};
+
+exports.getWaitingRoomStatus = async ({ user, appointmentId }) => {
+  const appointment = await Appointment.findById(appointmentId)
+    .populate('patient doctor', 'firstName lastName avatar doctorProfile.specialty')
+    .lean();
+
+  if (!appointment) {
+    const error = new Error('Appointment not found');
+    error.statusCode = 404;
+    throw error;
+  }
+
+  const isPatient = user.role === 'patient' && appointment.patient?._id?.toString() === user._id.toString();
+  const isDoctor = user.role === 'doctor' && appointment.doctor?._id?.toString() === user._id.toString();
+
+  if (!isPatient && !isDoctor) {
+    const error = new Error('Access denied');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  let queue = appointment.waitingRoom || {};
+  if (appointment.status === 'in_waiting_room' && queue.joinedAt) {
+    queue = {
+      ...queue,
+      ...(await computeQueuePosition(appointment, new Date(queue.joinedAt)))
+    };
+  }
+
+  return {
+    appointmentId: appointment._id,
+    status: appointment.status,
+    type: appointment.type,
+    scheduledTime: appointment.scheduledTime,
+    waitingRoom: queue,
+    patient: isDoctor ? appointment.patient : undefined,
+    doctor: appointment.doctor
+  };
+};
+
+exports.getDoctorWaitingQueue = async (user) => {
+  if (user.role !== 'doctor') {
+    const error = new Error('Only doctors can view the waiting queue');
+    error.statusCode = 403;
+    throw error;
+  }
+
+  const waiting = await Appointment.find({
+    doctor: user._id,
+    status: 'in_waiting_room'
+  })
+    .populate('patient', 'firstName lastName phone avatar')
+    .sort({ 'waitingRoom.joinedAt': 1 })
+    .lean();
+
+  return waiting.map((item, index) => ({
+    ...item,
+    waitingRoom: {
+      ...item.waitingRoom,
+      position: index + 1,
+      patientsAhead: index,
+      estimatedWaitMinutes: index * 10 + 5
+    }
+  }));
+};
+
+exports.startVideoCall = async ({ user, appointmentId, io }) => {
   if (!['doctor', 'patient'].includes(user.role)) {
     const error = new Error('Only doctors and patients can join a video call');
     error.statusCode = 403;
@@ -217,6 +427,12 @@ exports.startVideoCall = async ({ user, appointmentId }) => {
     throw error;
   }
 
+  if (!['confirmed', 'in_waiting_room', 'in_progress'].includes(appointment.status)) {
+    const error = new Error('This appointment is not ready for a video call');
+    error.statusCode = 400;
+    throw error;
+  }
+
   appointment.status = 'in_progress';
   appointment.videoCall = {
     ...appointment.videoCall,
@@ -228,6 +444,18 @@ exports.startVideoCall = async ({ user, appointmentId }) => {
   await appointment.save();
   await appointment.populate('patient doctor', 'firstName lastName phone avatar');
 
+  notificationService.notifyConsultationStarted(appointment, { startedByRole: user.role }).catch((err) => {
+    console.error('[Notification] consultation started', err.message);
+  });
+
+  const patientId = appointment.patient?._id?.toString() || appointment.patient?.toString();
+  if (io && patientId) {
+    io.to(`patient-${patientId}`).emit('consultation-ready', {
+      appointmentId: appointment._id.toString(),
+      roomId: appointment.videoCall.roomId
+    });
+  }
+
   return {
     appointment,
     roomId: appointment.videoCall.roomId,
@@ -235,7 +463,7 @@ exports.startVideoCall = async ({ user, appointmentId }) => {
   };
 };
 
-exports.endVideoCall = async ({ user, appointmentId }) => {
+exports.endVideoCall = async ({ user, appointmentId, io }) => {
   if (!['doctor', 'patient'].includes(user.role)) {
     const error = new Error('Only doctors and patients can end a video call');
     error.statusCode = 403;
@@ -268,6 +496,16 @@ exports.endVideoCall = async ({ user, appointmentId }) => {
   appointment.status = 'completed';
   await appointment.save();
   await appointment.populate('patient doctor', 'firstName lastName phone avatar');
+
+  notificationService.notifyConsultationEnded(appointment).catch((err) => {
+    console.error('[Notification] consultation ended', err.message);
+  });
+
+  if (io) {
+    io.to(`appointment-${appointment._id}`).emit('consultation-ended', {
+      appointmentId: appointment._id.toString()
+    });
+  }
 
   return appointment;
 };

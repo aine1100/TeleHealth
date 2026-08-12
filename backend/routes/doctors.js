@@ -38,6 +38,15 @@ router.post('/me/support', ...doctorOnly, supportValidation, doctorController.su
 
 /**
  * @openapi
+ * /api/doctors/{id}/availability:
+ *   get:
+ *     summary: Get open booking slots for a doctor
+ *     tags: [Doctors]
+ */
+router.get('/:id/availability', doctorController.getDoctorAvailability);
+
+/**
+ * @openapi
  * /api/doctors/{id}:
  *   get:
  *     summary: Get a doctor profile by id
