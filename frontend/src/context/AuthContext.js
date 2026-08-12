@@ -129,10 +129,10 @@ export const AuthProvider = ({ children }) => {
     return applySession(res.data);
   };
 
-  const getDoctorInvite = async (token) => {
-    const res = await api.get(`/api/clinics/doctors/invite/${token}`);
+  const getDoctorInvite = useCallback(async (inviteToken) => {
+    const res = await api.get(`/api/clinics/doctors/invite/${inviteToken}`);
     return res.data;
-  };
+  }, []);
 
   const logout = () => {
     setAuthToken(null);

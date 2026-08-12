@@ -56,7 +56,7 @@ const DoctorSetup = () => {
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [token, getDoctorInvite]);
 
   const onChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
