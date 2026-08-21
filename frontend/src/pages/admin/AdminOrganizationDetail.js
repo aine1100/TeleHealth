@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, FileText } from 'lucide-react';
+import { ArrowLeft, ExternalLink } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import DocumentViewer from '../../components/ui/DocumentViewer';
 import { adminService } from '../../services/adminService';
 import { orgTypeLabel } from '../../utils/orgAccess';
 
@@ -173,24 +174,8 @@ const AdminOrganizationDetail = () => {
 
         <div className="mt-6">
           <p className="text-sm font-bold text-ink-900">Verification documents</p>
-          <div className="mt-3 space-y-2">
-            {org.verificationDocuments?.length ? (
-              org.verificationDocuments.map((doc, index) => (
-                <a
-                  key={`${doc.fileName}-${index}`}
-                  href={doc.fileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-3 rounded-xl border border-ink-200 px-4 py-3 text-sm text-ink-700 transition hover:border-brand-300 hover:bg-brand-50/40"
-                >
-                  <FileText size={16} className="text-brand-500" />
-                  <span className="flex-1 font-medium">{doc.fileName || `Document ${index + 1}`}</span>
-                  <ExternalLink size={14} className="text-ink-400" />
-                </a>
-              ))
-            ) : (
-              <p className="text-sm text-ink-500">No documents uploaded.</p>
-            )}
+          <div className="mt-3">
+            <DocumentViewer documents={org.verificationDocuments} emptyText="No documents uploaded." />
           </div>
         </div>
 

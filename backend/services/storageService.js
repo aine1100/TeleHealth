@@ -6,7 +6,15 @@ exports.buildStorageKey = (folder, originalName) => {
   return `${folder}/${uuidv4()}${ext}`;
 };
 
+/** Join a public bucket/CDN base URL with an object key (no double slashes). */
 exports.buildPublicUrl = (bucketBaseUrl, key) => {
-  if (!bucketBaseUrl) return null;
-  return `${bucketBaseUrl.replace(/\/$/, '')}/${key}`;
+  if (!bucketBaseUrl || !key) return null;
+  const base = String(bucketBaseUrl).replace(/\/$/, '');
+  const cleanKey = String(key)
+    .replace(/^\/+/, '')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return `${base}/${cleanKey}`;
 };

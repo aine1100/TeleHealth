@@ -1,9 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Save } from 'lucide-react';
+import { BellRing, Save } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import Dropdown from '../../components/auth/Dropdown';
 import { useAuth } from '../../context/AuthContext';
 import { patientService } from '../../services/patientService';
+import {
+  enableDeviceNotifications,
+  getNotificationPermission,
+  isDeviceNotificationSupported
+} from '../../utils/deviceNotifications';
 
 const LANGUAGE_OPTIONS = [
   { value: 'en', label: 'English' },
@@ -17,9 +22,9 @@ const LANGUAGE_OPTIONS = [
 const TOGGLE_ITEMS = [
   { key: 'email', label: 'Email notifications', hint: 'Appointment and account emails' },
   { key: 'sms', label: 'SMS notifications', hint: 'Text alerts for visits and reminders' },
-  { key: 'push', label: 'Push notifications', hint: 'In-app alerts while signed in' },
+  { key: 'push', label: 'Push notifications', hint: 'Browser and phone alerts for doses and visits' },
   { key: 'appointmentReminders', label: 'Appointment reminders', hint: 'Reminders before your visits' },
-  { key: 'medicineReminders', label: 'Medicine reminders', hint: 'Dose reminders you set up' },
+  { key: 'medicineReminders', label: 'Medicine reminders', hint: 'Dose alerts at scheduled times (enable device alerts on Medicines)' },
   { key: 'labResults', label: 'Lab result alerts', hint: 'When lab results are ready' }
 ];
 
@@ -60,6 +65,8 @@ const PatientSettings = () => {
     medicineReminders: true,
     labResults: true
   });
+  const [enablingPush, setEnablingPush] = useState(false);
+  const [pushPermission, setPushPermission] = useState(getNotificationPermission());
 
   useEffect(() => {
     let mounted = true;
@@ -148,8 +155,49 @@ const PatientSettings = () => {
               />
             ))}
           </div>
-        </section>
 
+          {isDeviceNotificationSupported() ? (
+            <div className="mt-4 rounded-xl border border-brand-100 bg-brand-50/50 px-4 py-3">
+              <p className="text-sm font-semibold text-ink-900">Device alerts</p>
+              <p className="mt-1 text-xs text-ink-600">
+                Allow this browser or phone to show medicine reminders even when the tab is closed.
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {pushPermission === 'granted' ? (
+                  <span className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
+                    Enabled on this device
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={enablingPush}
+                    onClick={async () => {
+                      setEnablingPush(true);
+                      try {
+                        await enableDeviceNotifications();
+                        setPushPermission('granted');
+                        toast.success('Device notifications enabled');
+                      } catch (error) {
+                        toast.error(
+                          error?.response?.data?.message ||
+                            error?.message ||
+                            'Unable to enable notifications'
+                        );
+                        setPushPermission(getNotificationPermission());
+                      } finally {
+                        setEnablingPush(false);
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl bg-brand-500 px-3.5 py-2 text-xs font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+                  >
+                    <BellRing size={14} />
+                    {enablingPush ? 'Enabling…' : 'Enable on this device'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </section>
         <div className="flex justify-end">
           <button
             type="submit"

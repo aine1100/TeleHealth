@@ -28,9 +28,36 @@ const getS3Client = () => {
   return s3Client;
 };
 
+/** Public CDN base for browser-accessible objects (r2.dev or custom domain). */
+exports.getR2PublicBaseUrl = () => {
+  const base = (process.env.R2_PUBLIC_URL || '').trim().replace(/\/$/, '');
+  return base || null;
+};
+
+/**
+ * Build a browser-ready public URL for an object key.
+ * Prefer R2_PUBLIC_URL — S3 Location points at the private API endpoint.
+ */
+exports.buildR2PublicUrl = (key) => {
+  const base = exports.getR2PublicBaseUrl();
+  if (!base) {
+    throw new Error('R2_PUBLIC_URL is not configured. Set it to your public R2 URL (e.g. https://pub-….r2.dev).');
+  }
+  const cleanKey = String(key || '')
+    .replace(/^\/+/, '')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => encodeURIComponent(segment))
+    .join('/');
+  return `${base}/${cleanKey}`;
+};
+
 exports.uploadFileToR2 = async (file, key) => {
   if (!process.env.R2_ENDPOINT || !process.env.R2_BUCKET_NAME) {
     throw new Error('Cloudflare R2 is not configured');
+  }
+  if (!exports.getR2PublicBaseUrl()) {
+    throw new Error('R2_PUBLIC_URL is not configured');
   }
 
   const s3 = getS3Client();
@@ -38,15 +65,9 @@ exports.uploadFileToR2 = async (file, key) => {
     Bucket: process.env.R2_BUCKET_NAME,
     Key: key,
     Body: file.buffer,
-    ContentType: file.mimetype,
-    ACL: 'public-read'
+    ContentType: file.mimetype
   };
 
-  const result = await s3.upload(params).promise();
-  if (result.Location) {
-    return result.Location;
-  }
-
-  const baseUrl = (process.env.R2_PUBLIC_URL || process.env.R2_ENDPOINT).replace(/\/$/, '');
-  return `${baseUrl}/${encodeURIComponent(key)}`;
+  await s3.upload(params).promise();
+  return exports.buildR2PublicUrl(key);
 };

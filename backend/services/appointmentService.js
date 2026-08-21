@@ -410,8 +410,8 @@ exports.getDoctorWaitingQueue = async (user) => {
 };
 
 exports.startVideoCall = async ({ user, appointmentId, io }) => {
-  if (!['doctor', 'patient'].includes(user.role)) {
-    const error = new Error('Only doctors and patients can join a video call');
+  if (user.role !== 'doctor') {
+    const error = new Error('Only the doctor can start the video consultation');
     error.statusCode = 403;
     throw error;
   }
@@ -423,11 +423,7 @@ exports.startVideoCall = async ({ user, appointmentId, io }) => {
     throw error;
   }
 
-  const isParticipant =
-    (user.role === 'doctor' && appointment.doctor?.toString() === user._id.toString()) ||
-    (user.role === 'patient' && appointment.patient?.toString() === user._id.toString());
-
-  if (!isParticipant) {
+  if (appointment.doctor?.toString() !== user._id.toString()) {
     const error = new Error('Access denied');
     error.statusCode = 403;
     throw error;
@@ -537,6 +533,24 @@ exports.getVideoCallSession = async ({ user, appointmentId }) => {
   if (!isParticipant) {
     const error = new Error('Access denied');
     error.statusCode = 403;
+    throw error;
+  }
+
+  // Patients must wait in the waiting room until the doctor starts the call
+  if (user.role === 'patient' && appointment.status !== 'in_progress') {
+    const error = new Error(
+      appointment.status === 'completed'
+        ? 'This consultation has ended'
+        : 'Please wait in the waiting room until your doctor starts the consultation'
+    );
+    error.statusCode = 400;
+    error.code = 'WAITING_ROOM_REQUIRED';
+    throw error;
+  }
+
+  if (user.role === 'doctor' && !['confirmed', 'in_waiting_room', 'in_progress'].includes(appointment.status)) {
+    const error = new Error('This appointment is not ready for a video call');
+    error.statusCode = 400;
     throw error;
   }
 

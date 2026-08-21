@@ -67,7 +67,7 @@ const medicineReminderSchema = new mongoose.Schema({
   // Reminder Settings
   reminderSettings: {
     enabled: { type: Boolean, default: true },
-    reminderTime: { type: Number, default: 15 }, // minutes before dose
+    reminderTime: { type: Number, default: 0 }, // minutes before dose (0 = at dose time)
     notificationMethods: [{ 
       type: String, 
       enum: ['push', 'sms', 'email'] 
@@ -75,6 +75,14 @@ const medicineReminderSchema = new mongoose.Schema({
     soundEnabled: { type: Boolean, default: true },
     vibrationEnabled: { type: Boolean, default: true }
   },
+
+  // Prevent duplicate dose alerts for the same calendar slot
+  notifiedSlots: [
+    {
+      slotKey: { type: String, required: true },
+      notifiedAt: { type: Date, default: Date.now }
+    }
+  ],
   
   // Status
   status: { 

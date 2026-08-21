@@ -50,6 +50,9 @@ const io = new Server(server, {
 });
 app.set('io', io);
 
+const { startMedicineReminderScheduler } = require('./services/medicineReminderScheduler');
+startMedicineReminderScheduler(io);
+
 io.on('connection', (socket) => {
   socket.on('join-user-room', ({ userId, role }) => {
     if (!userId) return;

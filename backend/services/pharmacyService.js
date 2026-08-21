@@ -258,33 +258,149 @@ exports.getOverview = async (user) => {
   assertPharmacist(user);
   const pharmacyId = user._id;
 
-  const [medicineCount, lowStock, pendingOrders, activeOrders, recentOrders] = await Promise.all([
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const startOfWeek = new Date(startOfDay);
+  startOfWeek.setDate(startOfWeek.getDate() - 6);
+  const startOfMonth = new Date(startOfDay.getFullYear(), startOfDay.getMonth(), 1);
+  const last14 = new Date(startOfDay);
+  last14.setDate(last14.getDate() - 13);
+
+  const paidFilter = { pharmacy: pharmacyId, 'payment.status': 'paid' };
+
+  const [
+    medicineCount,
+    lowStock,
+    pendingOrders,
+    activeOrders,
+    completedOrders,
+    catalogOrders,
+    prescriptionOrders,
+    recentOrders,
+    revenueAgg,
+    revenueTodayAgg,
+    revenueWeekAgg,
+    revenueMonthAgg,
+    salesByDayAgg,
+    topMedicinesAgg,
+    fulfillmentAgg
+  ] = await Promise.all([
     PharmacyMedicine.countDocuments({ pharmacy: pharmacyId, isActive: true }),
     PharmacyMedicine.countDocuments({
       pharmacy: pharmacyId,
       isActive: true,
       $expr: { $lte: ['$stockQuantity', '$reorderLevel'] }
     }),
-    PharmacyOrder.countDocuments({ pharmacy: pharmacyId, status: 'pending', 'payment.status': 'paid' }),
+    PharmacyOrder.countDocuments({ ...paidFilter, status: 'pending' }),
     PharmacyOrder.countDocuments({
-      pharmacy: pharmacyId,
-      'payment.status': 'paid',
+      ...paidFilter,
       status: { $in: ['accepted', 'preparing', 'ready', 'out_for_delivery'] }
     }),
-    PharmacyOrder.find({ pharmacy: pharmacyId, 'payment.status': 'paid' })
+    PharmacyOrder.countDocuments({ ...paidFilter, status: 'completed' }),
+    PharmacyOrder.countDocuments({ ...paidFilter, orderType: 'catalog' }),
+    PharmacyOrder.countDocuments({ ...paidFilter, orderType: 'prescription' }),
+    PharmacyOrder.find(paidFilter)
       .populate('patient', 'firstName lastName phone')
       .sort({ createdAt: -1 })
-      .limit(6)
-      .lean()
+      .limit(8)
+      .lean(),
+    PharmacyOrder.aggregate([
+      { $match: paidFilter },
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    PharmacyOrder.aggregate([
+      { $match: { ...paidFilter, createdAt: { $gte: startOfDay } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    PharmacyOrder.aggregate([
+      { $match: { ...paidFilter, createdAt: { $gte: startOfWeek } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    PharmacyOrder.aggregate([
+      { $match: { ...paidFilter, createdAt: { $gte: startOfMonth } } },
+      { $group: { _id: null, total: { $sum: '$totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    PharmacyOrder.aggregate([
+      { $match: { ...paidFilter, createdAt: { $gte: last14 } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+          revenue: { $sum: '$totalAmount' },
+          orders: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]),
+    PharmacyOrder.aggregate([
+      { $match: paidFilter },
+      { $unwind: '$items' },
+      {
+        $group: {
+          _id: '$items.medicineName',
+          qty: { $sum: '$items.quantity' },
+          revenue: {
+            $sum: { $multiply: ['$items.quantity', { $ifNull: ['$items.unitPrice', 0] }] }
+          }
+        }
+      },
+      { $sort: { revenue: -1 } },
+      { $limit: 5 }
+    ]),
+    PharmacyOrder.aggregate([
+      { $match: paidFilter },
+      { $group: { _id: '$fulfillmentMethod', count: { $sum: 1 } } }
+    ])
   ]);
+
+  const dayMap = Object.fromEntries(
+    (salesByDayAgg || []).map((row) => [row._id, { revenue: row.revenue || 0, orders: row.orders || 0 }])
+  );
+  const salesByDay = [];
+  for (let i = 13; i >= 0; i -= 1) {
+    const d = new Date(startOfDay);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const label = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    salesByDay.push({
+      date: key,
+      label,
+      revenue: dayMap[key]?.revenue || 0,
+      orders: dayMap[key]?.orders || 0
+    });
+  }
+
+  const totalRevenue = revenueAgg[0]?.total || 0;
+  const totalPaidOrders = revenueAgg[0]?.count || 0;
 
   return {
     stats: {
       medicineCount,
       lowStock,
       pendingOrders,
-      activeOrders
+      activeOrders,
+      completedOrders,
+      catalogOrders,
+      prescriptionOrders,
+      revenueTotal: totalRevenue,
+      revenueToday: revenueTodayAgg[0]?.total || 0,
+      revenueWeek: revenueWeekAgg[0]?.total || 0,
+      revenueMonth: revenueMonthAgg[0]?.total || 0,
+      ordersToday: revenueTodayAgg[0]?.count || 0,
+      ordersWeek: revenueWeekAgg[0]?.count || 0,
+      ordersMonth: revenueMonthAgg[0]?.count || 0,
+      paidOrders: totalPaidOrders,
+      averageOrderValue: totalPaidOrders
+        ? Math.round(totalRevenue / totalPaidOrders)
+        : 0,
+      pickupOrders: fulfillmentAgg.find((row) => row._id === 'pickup')?.count || 0,
+      deliveryOrders: fulfillmentAgg.find((row) => row._id === 'delivery')?.count || 0
     },
+    salesByDay,
+    topMedicines: (topMedicinesAgg || []).map((row) => ({
+      name: row._id || 'Medicine',
+      qty: row.qty || 0,
+      revenue: row.revenue || 0
+    })),
     recentOrders
   };
 };
