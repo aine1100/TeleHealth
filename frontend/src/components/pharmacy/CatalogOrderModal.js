@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MapPin, Minus, Plus, Store, Truck, X } from 'lucide-react';
+import { CreditCard, MapPin, Minus, Plus, Smartphone, Store, Truck, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { TextInput, TextTextarea } from '../auth/FormFields';
 import { pharmacyService } from '../../services/pharmacyService';
@@ -15,13 +15,17 @@ const CatalogOrderModal = ({ open, onClose, pharmacy, cartItems = [], onChangeQt
   const [method, setMethod] = useState(offersPickup ? 'pickup' : 'delivery');
   const [deliveryAddress, setDeliveryAddress] = useState(user?.address || '');
   const [deliveryNotes, setDeliveryNotes] = useState('');
+  const [payMethod, setPayMethod] = useState('mtn_momo');
+  const [phoneNumber, setPhoneNumber] = useState(user?.phone || '');
 
   useEffect(() => {
     if (!open) return;
     setMethod(offersPickup ? 'pickup' : 'delivery');
     setDeliveryAddress(user?.address || '');
     setDeliveryNotes('');
-  }, [open, offersPickup, user?.address]);
+    setPayMethod('mtn_momo');
+    setPhoneNumber(user?.phone || '');
+  }, [open, offersPickup, user?.address, user?.phone]);
 
   const itemsTotal = useMemo(
     () => cartItems.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0),
@@ -48,9 +52,14 @@ const CatalogOrderModal = ({ open, onClose, pharmacy, cartItems = [], onChangeQt
       toast.error('Enter a delivery address');
       return;
     }
+    if (!phoneNumber.trim()) {
+      toast.error('Enter a mobile money number to pay');
+      return;
+    }
+
     setSaving(true);
     try {
-      await pharmacyService.createOrder({
+      const created = await pharmacyService.createOrder({
         pharmacyId: pharmacy._id,
         orderType: 'catalog',
         fulfillmentMethod: method,
@@ -61,11 +70,22 @@ const CatalogOrderModal = ({ open, onClose, pharmacy, cartItems = [], onChangeQt
           quantity: item.quantity
         }))
       });
-      toast.success('Order created — pay to send it to the pharmacy');
+
+      const orderId = created?.data?._id;
+      if (!orderId) {
+        throw new Error('Order created but missing id');
+      }
+
+      await pharmacyService.payOrder(orderId, {
+        method: payMethod,
+        phoneNumber: phoneNumber.trim()
+      });
+
+      toast.success('Paid — order sent to the pharmacy');
       onSent?.();
       onClose();
     } catch (error) {
-      toast.error(error?.response?.data?.message || 'Unable to place order');
+      toast.error(error?.response?.data?.message || error?.message || 'Unable to complete checkout');
     } finally {
       setSaving(false);
     }
@@ -80,8 +100,13 @@ const CatalogOrderModal = ({ open, onClose, pharmacy, cartItems = [], onChangeQt
       >
         <div className="flex items-start justify-between border-b border-ink-100 px-4 py-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">Catalog order</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-ink-400">
+              Cart · Checkout · Pay
+            </p>
             <h2 className="text-base font-bold text-ink-900">{pharmacyName}</h2>
+            <p className="mt-0.5 text-xs text-ink-500">
+              Review items, choose pickup or delivery, then pay to send the order.
+            </p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-ink-500 hover:bg-ink-50">
             <X size={16} />
@@ -89,42 +114,47 @@ const CatalogOrderModal = ({ open, onClose, pharmacy, cartItems = [], onChangeQt
         </div>
 
         <div className="space-y-4 px-4 py-4">
-          <div className="space-y-2">
-            {cartItems.map((item) => (
-              <div
-                key={item._id}
-                className="flex items-center gap-3 rounded-xl border border-ink-100 px-3 py-2.5"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-ink-900">{item.name}</p>
-                  <p className="text-xs text-ink-500">
-                    UGX {Number(item.price || 0).toLocaleString()} each
-                    {item.requiresPrescription ? ' · Rx may be required' : ''}
-                  </p>
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-400">1. Your cart</p>
+            <div className="space-y-2">
+              {cartItems.map((item) => (
+                <div
+                  key={item._id}
+                  className="flex items-center gap-3 rounded-xl border border-ink-100 px-3 py-2.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-ink-900">{item.name}</p>
+                    <p className="text-xs text-ink-500">
+                      UGX {Number(item.price || 0).toLocaleString()} each
+                      {item.requiresPrescription ? ' · Rx may be required' : ''}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onChangeQty?.(item._id, item.quantity - 1)}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-ink-200 text-ink-600 hover:bg-ink-50"
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <span className="w-6 text-center text-sm font-bold text-ink-900">{item.quantity}</span>
+                    <button
+                      type="button"
+                      onClick={() => onChangeQty?.(item._id, item.quantity + 1)}
+                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-ink-200 text-ink-600 hover:bg-ink-50"
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => onChangeQty?.(item._id, item.quantity - 1)}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-ink-200 text-ink-600 hover:bg-ink-50"
-                  >
-                    <Minus size={12} />
-                  </button>
-                  <span className="w-6 text-center text-sm font-bold text-ink-900">{item.quantity}</span>
-                  <button
-                    type="button"
-                    onClick={() => onChangeQty?.(item._id, item.quantity + 1)}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-ink-200 text-ink-600 hover:bg-ink-50"
-                  >
-                    <Plus size={12} />
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
           <div>
-            <p className="mb-2 text-sm font-semibold text-ink-800">Collection method</p>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-400">
+              2. Collection method
+            </p>
             <div className="grid gap-2 sm:grid-cols-2">
               {offersPickup ? (
                 <button
@@ -180,6 +210,40 @@ const CatalogOrderModal = ({ open, onClose, pharmacy, cartItems = [], onChangeQt
             </p>
           )}
 
+          <div>
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-400">3. Pay now</p>
+            <div className="space-y-2">
+              {[
+                { value: 'mtn_momo', label: 'MTN MoMo' },
+                { value: 'airtel_money', label: 'Airtel Money' }
+              ].map((option) => (
+                <label
+                  key={option.value}
+                  className="flex cursor-pointer items-center gap-2.5 rounded-xl border border-ink-200 px-3 py-2.5 text-sm text-ink-700"
+                >
+                  <input
+                    type="radio"
+                    name="checkoutPayMethod"
+                    checked={payMethod === option.value}
+                    onChange={() => setPayMethod(option.value)}
+                    className="h-4 w-4 border-ink-300 text-brand-500 focus:ring-brand-500"
+                  />
+                  <Smartphone size={15} className="text-brand-500" />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+            <div className="mt-3">
+              <TextInput
+                label="Mobile money number"
+                value={phoneNumber}
+                onChange={(e) => setPhoneNumber(e.target.value)}
+                placeholder="+256700000000"
+                required
+              />
+            </div>
+          </div>
+
           <div className="rounded-xl border border-ink-100 bg-ink-50/60 px-3 py-2.5 text-sm">
             <div className="flex justify-between text-ink-600">
               <span>Items</span>
@@ -192,7 +256,7 @@ const CatalogOrderModal = ({ open, onClose, pharmacy, cartItems = [], onChangeQt
               </div>
             ) : null}
             <div className="mt-2 flex justify-between border-t border-ink-200 pt-2 font-bold text-ink-900">
-              <span>Total</span>
+              <span>Total due</span>
               <span>UGX {total.toLocaleString()}</span>
             </div>
           </div>
@@ -202,9 +266,10 @@ const CatalogOrderModal = ({ open, onClose, pharmacy, cartItems = [], onChangeQt
           <button
             type="submit"
             disabled={saving || !cartItems.length}
-            className="rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50"
           >
-            {saving ? 'Placing order…' : 'Place order'}
+            <CreditCard size={15} />
+            {saving ? 'Processing…' : `Pay UGX ${total.toLocaleString()} & order`}
           </button>
           <button
             type="button"

@@ -35,6 +35,18 @@ PLATFORM_URL=https://YOUR-SERVICE.onrender.com
 FRONTEND_URL=https://YOUR-SERVICE.onrender.com
 CORS_ORIGIN=https://YOUR-SERVICE.onrender.com
 
+# Cloudflare R2 (public CDN for uploads)
+# R2_ENDPOINT=https://ACCOUNT_ID.r2.cloudflarestorage.com
+# R2_ACCESS_KEY_ID=
+# R2_SECRET_ACCESS_KEY=
+# R2_BUCKET_NAME=afyalink
+R2_PUBLIC_URL=https://pub-ae342959899f40b29244cada8abbbafe.r2.dev
+
+# Web Push for medicine reminders (browser / phone)
+# VAPID_PUBLIC_KEY=
+# VAPID_PRIVATE_KEY=
+# VAPID_SUBJECT=mailto:support@alivehealth.ug
+
 # Seed demo users once (or via shell). Prefer shell on Render free tier.
 SEED_ON_BOOT=false
 ADMIN_EMAIL=admin@alivehealth.ug

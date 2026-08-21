@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import PatientSidebar from '../components/patient/PatientSidebar';
 import PatientHeader from '../components/patient/PatientHeader';
+import { useMedicineReminderAlerts } from '../hooks/useMedicineReminderAlerts';
 
 const PatientLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  useMedicineReminderAlerts();
 
   return (
     <div className="h-screen overflow-hidden bg-[#f7f8fa] font-sans text-ink-900">

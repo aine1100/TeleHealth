@@ -18,7 +18,15 @@ router.post('/', authenticate, async (req, res) => {
   try {
     const reminder = new MedicineReminder({
       ...req.body,
-      patient: req.user._id
+      patient: req.user._id,
+      reminderSettings: {
+        enabled: true,
+        reminderTime: 0,
+        notificationMethods: ['push'],
+        soundEnabled: true,
+        vibrationEnabled: true,
+        ...(req.body.reminderSettings || {})
+      }
     });
     await reminder.save();
     res.status(201).json({ success: true, data: reminder });

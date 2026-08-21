@@ -22,7 +22,19 @@ const VideoConsultPage = ({ role = 'patient' }) => {
           role === 'doctor'
             ? await doctorService.getAppointment(appointmentId)
             : await patientService.getAppointment(appointmentId);
-        if (mounted) setAppointment(res?.data || null);
+        if (!mounted) return;
+
+        const appt = res?.data || null;
+        setAppointment(appt);
+
+        // Patients who arrive before the doctor starts stay in the waiting room
+        if (
+          role === 'patient' &&
+          appt &&
+          ['confirmed', 'in_waiting_room'].includes(appt.status)
+        ) {
+          navigate(`/patient/waiting/${appointmentId}`, { replace: true });
+        }
       } catch (error) {
         toast.error(error?.response?.data?.message || 'Unable to load consultation');
       } finally {
@@ -33,13 +45,15 @@ const VideoConsultPage = ({ role = 'patient' }) => {
     return () => {
       mounted = false;
     };
-  }, [appointmentId, role]);
+  }, [appointmentId, role, navigate]);
 
   const backPath = role === 'doctor' ? '/doctor/appointments' : '/patient/appointments';
   const counterpartName =
     role === 'doctor' ? getPatientName(appointment || {}) : getDoctorName(appointment || {});
 
-  const userName = [user?.firstName, user?.lastName].filter(Boolean).join(' ') || (role === 'doctor' ? 'Doctor' : 'Patient');
+  const userName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+    (role === 'doctor' ? 'Doctor' : 'Patient');
 
   const handleEnded = useCallback(() => {
     if (role === 'doctor') {
@@ -51,6 +65,14 @@ const VideoConsultPage = ({ role = 'patient' }) => {
 
   if (loading || !user?._id) {
     return <p className="py-20 text-center text-sm text-ink-500">Loading consultation…</p>;
+  }
+
+  if (
+    role === 'patient' &&
+    appointment &&
+    ['confirmed', 'in_waiting_room'].includes(appointment.status)
+  ) {
+    return <p className="py-20 text-center text-sm text-ink-500">Opening waiting room…</p>;
   }
 
   return (

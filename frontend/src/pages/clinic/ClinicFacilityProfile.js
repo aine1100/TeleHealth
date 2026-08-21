@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { FileText, ExternalLink, Save } from 'lucide-react';
+import { Save } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { TextInput } from '../../components/auth/FormFields';
 import Dropdown from '../../components/auth/Dropdown';
+import DocumentViewer from '../../components/ui/DocumentViewer';
 import { useAuth } from '../../context/AuthContext';
 import { clinicService } from '../../services/clinicService';
 
@@ -246,30 +247,9 @@ const ClinicFacilityProfile = () => {
           <section className="rounded-2xl border border-ink-200/70 bg-white p-5 shadow-card sm:p-6">
             <h2 className="text-sm font-bold text-ink-900">Verification documents</h2>
             <p className="mt-1 text-xs text-ink-500">Uploaded at registration. Contact support to replace documents.</p>
-            <ul className="mt-4 space-y-2">
-              {profile.verificationDocuments.map((doc, index) => (
-                <li
-                  key={`${doc.fileName}-${index}`}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-ink-100 bg-ink-50/50 px-3 py-2.5"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <FileText size={16} className="shrink-0 text-ink-400" />
-                    <span className="truncate text-sm font-medium text-ink-800">{doc.fileName || 'Document'}</span>
-                  </div>
-                  {doc.fileUrl ? (
-                    <a
-                      href={doc.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700"
-                    >
-                      View
-                      <ExternalLink size={12} />
-                    </a>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            <div className="mt-4">
+              <DocumentViewer documents={profile.verificationDocuments} />
+            </div>
           </section>
         ) : null}
 

@@ -172,7 +172,20 @@ const userSchema = new mongoose.Schema({
     appointmentReminders: { type: Boolean, default: true },
     medicineReminders: { type: Boolean, default: true },
     labResults: { type: Boolean, default: true }
-  }
+  },
+
+  // Web Push subscriptions (browser / installed PWA / phone browser)
+  pushSubscriptions: [
+    {
+      endpoint: { type: String, required: true },
+      keys: {
+        p256dh: { type: String, required: true },
+        auth: { type: String, required: true }
+      },
+      userAgent: { type: String },
+      createdAt: { type: Date, default: Date.now }
+    }
+  ]
 }, {
   timestamps: true
 });

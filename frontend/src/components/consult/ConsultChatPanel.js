@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { FileText, Image as ImageIcon, Paperclip, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { DocumentViewerModal } from '../ui/DocumentViewer';
 import { appointmentConsultService } from '../../services/appointmentConsultService';
 import { resolveApiUrl } from '../../utils/apiUrl';
 
@@ -19,6 +20,7 @@ const ConsultChatPanel = ({ appointmentId, userId, role, userName, socket }) => 
   const [uploading, setUploading] = useState(false);
   const listRef = useRef(null);
   const fileInputRef = useRef(null);
+  const [viewerDoc, setViewerDoc] = useState(null);
 
   const scrollToBottom = useCallback(() => {
     if (listRef.current) {
@@ -116,31 +118,36 @@ const ConsultChatPanel = ({ appointmentId, userId, role, userName, socket }) => 
     if (!attachment?.url) return null;
     const url = resolveAttachmentUrl(attachment.url);
     const isImage = attachment.mimeType?.startsWith('image/');
+    const openViewer = () =>
+      setViewerDoc({
+        url,
+        fileName: attachment.fileName,
+        fileType: attachment.mimeType
+      });
 
     if (isImage) {
       return (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="mt-2 block">
+        <button type="button" onClick={openViewer} className="mt-2 block text-left">
           <img
             src={url}
             alt={attachment.fileName || 'Shared image'}
             className="max-h-40 rounded-xl border border-ink-100 object-cover"
           />
-        </a>
+        </button>
       );
     }
 
     return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
+      <button
+        type="button"
+        onClick={openViewer}
         className={`mt-2 inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold ${
           isOwn ? 'border-brand-200 bg-white text-brand-700' : 'border-ink-200 bg-ink-50 text-ink-700'
         }`}
       >
         <FileText size={14} />
-        {attachment.fileName || 'Download file'}
-      </a>
+        {attachment.fileName || 'View file'}
+      </button>
     );
   };
 
@@ -223,6 +230,12 @@ const ConsultChatPanel = ({ appointmentId, userId, role, userName, socket }) => 
         </div>
         <p className="mt-2 text-[10px] text-ink-400">Signed in as {userName || role}</p>
       </form>
+
+      <DocumentViewerModal
+        open={Boolean(viewerDoc)}
+        document={viewerDoc}
+        onClose={() => setViewerDoc(null)}
+      />
     </div>
   );
 };

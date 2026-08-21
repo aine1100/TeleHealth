@@ -264,3 +264,56 @@ exports.notifyPharmacyOrderUpdate = async (order) => {
     priority: 'normal'
   });
 };
+
+exports.notifyMedicineDose = async (reminder, { io, slotTime, leadMinutes = 0 } = {}) => {
+  const patientId = reminder.patient?._id || reminder.patient;
+  const medicine = reminder.medicineName || 'your medicine';
+  const dosage = reminder.dosage ? ` (${reminder.dosage})` : '';
+  const when =
+    leadMinutes > 0
+      ? `in ${leadMinutes} minute${leadMinutes === 1 ? '' : 's'} (${slotTime})`
+      : `now (${slotTime})`;
+
+  const notification = await exports.createNotification({
+    recipientId: patientId,
+    type: 'medicine_reminder',
+    title: 'Medicine reminder',
+    message: `Time to take ${medicine}${dosage} — dose ${when}.`,
+    relatedModel: 'MedicineReminder',
+    relatedId: reminder._id,
+    actionUrl: `${PLATFORM_URL}/patient/medicines`,
+    actionLabel: 'Open reminders',
+    priority: 'high'
+  });
+
+  const payload = {
+    notificationId: notification?._id,
+    title: notification.title,
+    message: notification.message,
+    reminderId: reminder._id,
+    medicineName: reminder.medicineName,
+    dosage: reminder.dosage,
+    time: slotTime,
+    actionUrl: '/patient/medicines',
+    tag: `medicine-${reminder._id}-${slotTime}`
+  };
+
+  if (io && patientId) {
+    io.to(`patient-${patientId}`).emit('medicine-reminder', payload);
+  }
+
+  try {
+    const pushService = require('./pushService');
+    await pushService.sendToUser(patientId, {
+      title: payload.title,
+      message: payload.message,
+      actionUrl: payload.actionUrl,
+      tag: payload.tag,
+      data: payload
+    });
+  } catch (error) {
+    console.error('[MedicineReminders] push failed', error.message || error);
+  }
+
+  return notification;
+};

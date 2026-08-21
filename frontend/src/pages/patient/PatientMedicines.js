@@ -1,9 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Bell, Check, Clock, Pause, Pill, Plus, Save, Trash2, X } from 'lucide-react';
+import { Bell, BellRing, Check, Clock, Pause, Pill, Plus, Save, Trash2, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { TextInput, TextTextarea } from '../../components/auth/FormFields';
 import Dropdown from '../../components/auth/Dropdown';
 import { patientService } from '../../services/patientService';
+import {
+  enableDeviceNotifications,
+  getNotificationPermission,
+  isDeviceNotificationSupported
+} from '../../utils/deviceNotifications';
 
 const FREQUENCY_OPTIONS = [
   { value: 'once_daily', label: 'Once daily' },
@@ -42,6 +47,8 @@ const PatientMedicines = () => {
   const [reminders, setReminders] = useState([]);
   const [form, setForm] = useState(emptyForm);
   const [loggingId, setLoggingId] = useState(null);
+  const [enablingPush, setEnablingPush] = useState(false);
+  const [pushPermission, setPushPermission] = useState(getNotificationPermission());
 
   const load = async () => {
     try {
@@ -134,6 +141,26 @@ const PatientMedicines = () => {
     }
   };
 
+  const enablePhoneAlerts = async () => {
+    setEnablingPush(true);
+    try {
+      await enableDeviceNotifications();
+      setPushPermission('granted');
+      toast.success('Device notifications enabled for medicine reminders');
+    } catch (error) {
+      if (error?.code === 'DENIED') {
+        toast.error('Allow notifications in your browser settings to get dose alerts');
+      } else if (error?.code === 'UNSUPPORTED') {
+        toast.error('This browser does not support device notifications');
+      } else {
+        toast.error(error?.response?.data?.message || error?.message || 'Unable to enable notifications');
+      }
+      setPushPermission(getNotificationPermission());
+    } finally {
+      setEnablingPush(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-[1100px] animate-fade-up">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -143,16 +170,43 @@ const PatientMedicines = () => {
             Track doses, get on-time reminders, and stay on your prescribed schedule.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-500/20 hover:bg-brand-600"
-        >
-          <Plus size={16} />
-          Add reminder
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {isDeviceNotificationSupported() && pushPermission !== 'granted' ? (
+            <button
+              type="button"
+              disabled={enablingPush}
+              onClick={enablePhoneAlerts}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-brand-200 bg-white px-4 py-2.5 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50"
+            >
+              <BellRing size={16} />
+              {enablingPush ? 'Enabling…' : 'Enable phone alerts'}
+            </button>
+          ) : null}
+          {pushPermission === 'granted' ? (
+            <span className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+              <Bell size={14} />
+              Device alerts on
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-500/20 hover:bg-brand-600"
+          >
+            <Plus size={16} />
+            Add reminder
+          </button>
+        </div>
       </div>
 
+      {isDeviceNotificationSupported() ? (
+        <div className="mt-4 rounded-2xl border border-ink-200/70 bg-white px-4 py-3 text-sm text-ink-600 shadow-card">
+          Get dose alerts on this phone or computer even when Alive Health is in the background.
+          {pushPermission === 'granted'
+            ? ' Alerts are enabled for this device.'
+            : ' Tap “Enable phone alerts” and allow notifications when prompted.'}
+        </div>
+      ) : null}
       <div className="mt-5 grid gap-4 sm:grid-cols-3">
         {[
           { label: 'Active reminders', value: activeCount, icon: Pill, tone: 'bg-brand-50 text-brand-700' },
