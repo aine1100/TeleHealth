@@ -6,6 +6,13 @@ import LogoutConfirmModal from '../components/auth/LogoutConfirmModal';
 
 const AuthContext = createContext();
 
+const normalizeUser = (raw) => {
+  if (!raw) return null;
+  const id = raw._id || raw.id;
+  if (!id) return raw;
+  return { ...raw, _id: id, id };
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -15,8 +22,8 @@ export const AuthProvider = ({ children }) => {
   const fetchUser = useCallback(async () => {
     try {
       const res = await api.get('/api/auth/me');
-      setUser(res.data.user);
-      return res.data.user;
+      setUser(normalizeUser(res.data.user));
+      return normalizeUser(res.data.user);
     } catch (error) {
       setAuthToken(null);
       setUser(null);
@@ -43,7 +50,7 @@ export const AuthProvider = ({ children }) => {
     // Commit user before callers navigate so ProtectedRoute does not bounce to /login.
     if (data.user) {
       flushSync(() => {
-        setUser(data.user);
+        setUser(normalizeUser(data.user));
       });
     }
     return data;

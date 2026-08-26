@@ -34,6 +34,11 @@ const labRoutes = require('./routes/labs');
 const app = express();
 const server = http.createServer(app);
 
+// Render/nginx set X-Forwarded-For; required for express-rate-limit and correct client IPs
+if (process.env.NODE_ENV === 'production' || process.env.TRUST_PROXY === 'true') {
+  app.set('trust proxy', 1);
+}
+
 const parseCorsOrigin = () => {
   if (!process.env.CORS_ORIGIN || process.env.CORS_ORIGIN.trim() === '*') {
     return true;
