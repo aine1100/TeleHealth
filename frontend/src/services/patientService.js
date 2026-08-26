@@ -66,8 +66,8 @@ export const patientService = {
     return response.data;
   },
 
-  async getReminders() {
-    const response = await api.get('/api/medicines/my-reminders');
+  async getReminders(params = {}) {
+    const response = await api.get('/api/medicines/my-reminders', { params });
     return response.data;
   },
 
@@ -91,8 +91,13 @@ export const patientService = {
     return response.data;
   },
 
-  async getNotifications() {
-    const response = await api.get('/api/notifications/my-notifications');
+  async getNotifications(params = {}) {
+    const response = await api.get('/api/notifications/my-notifications', { params });
+    return response.data;
+  },
+
+  async markNotificationRead(id) {
+    const response = await api.patch(`/api/notifications/${id}/read`);
     return response.data;
   }
 };

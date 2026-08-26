@@ -58,7 +58,7 @@ router.post('/mock', authenticate, async (req, res) => {
       return res.status(400).json({ success: false, message: 'Appointment is required' });
     }
 
-    const allowedMethods = ['mtn_momo', 'airtel_money', 'cash'];
+    const allowedMethods = ['mtn_momo', 'airtel_money', 'cash', 'insurance'];
     if (!allowedMethods.includes(method)) {
       return res.status(400).json({ success: false, message: 'Invalid payment method' });
     }
@@ -71,6 +71,36 @@ router.post('/mock', authenticate, async (req, res) => {
         message: 'Payment already completed',
         data: appointment
       });
+    }
+
+    let insuranceMeta = null;
+    if (method === 'insurance') {
+      const insuranceService = require('../services/insuranceService');
+      const { quote, claim } = await insuranceService.createClaimFromPayment({
+        patientUser: req.user,
+        amount: appointment.payment.totalAmount,
+        benefitType: 'consult',
+        relatedModel: 'Appointment',
+        relatedId: appointment._id,
+        providerName: 'Consultation'
+      });
+      if (!quote.eligible) {
+        return res.status(400).json({
+          success: false,
+          message: quote.message || 'No verified insurance policy available'
+        });
+      }
+      insuranceMeta = { quote, claim };
+      appointment.insuranceClaim = {
+        claimNumber: claim?.claimNumber,
+        amountClaimed: quote.insurerShare,
+        status: 'submitted',
+        submittedAt: new Date(),
+        approvedAmount: 0
+      };
+      // Patient pays their co-pay share via mock; full appointment marked paid so visit proceeds
+      appointment.payment.amount = quote.patientShare;
+      // keep totalAmount as original bill for records; patientShare is what MoMo would take
     }
 
     const transactionId = `MOCK-${Date.now()}-${appointment._id.toString().slice(-6)}`;
@@ -92,9 +122,19 @@ router.post('/mock', authenticate, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Mock payment successful',
+      message:
+        method === 'insurance'
+          ? `Insurance applied. You pay UGX ${Number(insuranceMeta?.quote?.patientShare || 0).toLocaleString()}; claim submitted for the rest.`
+          : 'Mock payment successful',
       mock: true,
-      data: appointment
+      data: appointment,
+      insurance: insuranceMeta
+        ? {
+            patientShare: insuranceMeta.quote.patientShare,
+            insurerShare: insuranceMeta.quote.insurerShare,
+            claimNumber: insuranceMeta.claim?.claimNumber
+          }
+        : undefined
     });
   } catch (error) {
     sendErrorResponse(res, error, {

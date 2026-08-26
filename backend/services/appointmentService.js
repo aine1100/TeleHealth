@@ -278,6 +278,18 @@ exports.updateAppointmentStatus = async ({ user, appointmentId, body, io }) => {
     });
   }
 
+  if (status === 'postponed') {
+    notificationService.notifyAppointmentPostponed(appointment).catch((err) => {
+      console.error('[Notification] appointment postponed', err.message);
+    });
+  }
+
+  if (status === 'referred') {
+    notificationService.notifyAppointmentReferred(appointment).catch((err) => {
+      console.error('[Notification] appointment referred', err.message);
+    });
+  }
+
   return appointment;
 };
 
@@ -646,14 +658,17 @@ exports.saveConsultationCarePlan = async ({ user, appointmentId, body }) => {
       isChronic: Boolean(item.isChronic)
     }));
 
-  appointment.labOrders = (Array.isArray(labOrders) ? labOrders : [])
-    .filter((item) => item?.testName?.trim())
-    .map((item) => ({
-      testName: String(item.testName).trim(),
-      testCode: item.testCode || '',
-      instructions: item.instructions || '',
-      status: item.status || 'ordered'
-    }));
+  const cleanedLabs = (Array.isArray(labOrders) ? labOrders : []).filter((item) =>
+    item?.testName?.trim()
+  );
+
+  appointment.labOrders = cleanedLabs.map((item) => ({
+    testName: String(item.testName).trim(),
+    testCode: item.testCode || '',
+    instructions: item.instructions || '',
+    lab: item.labId || item.lab || undefined,
+    status: item.status || 'ordered'
+  }));
 
   if (markCompleted || appointment.status === 'in_progress') {
     appointment.status = 'completed';
@@ -662,6 +677,36 @@ exports.saveConsultationCarePlan = async ({ user, appointmentId, body }) => {
   appointment.updatedBy = user._id;
   await appointment.save();
   await appointment.populate('patient doctor', 'firstName lastName phone avatar doctorProfile.specialty');
+
+  try {
+    const labService = require('./labService');
+    const createdLabs = await labService.createOrdersFromCarePlan({
+      appointment,
+      labOrders: cleanedLabs.map((item) => ({
+        testName: String(item.testName).trim(),
+        testCode: item.testCode || '',
+        instructions: item.instructions || '',
+        labId: item.labId || item.lab,
+        priority: item.priority
+      })),
+      doctorId: user._id
+    });
+    if (createdLabs.length) {
+      appointment.labOrders = appointment.labOrders.map((row, index) => {
+        const created = createdLabs[index];
+        if (!created) return row;
+        return {
+          ...(row.toObject?.() || row),
+          labOrderId: created._id,
+          lab: created.lab || row.lab
+        };
+      });
+      appointment.markModified('labOrders');
+      await appointment.save();
+    }
+  } catch (err) {
+    console.error('[LabOrders] sync from care plan', err.message);
+  }
 
   if (createReminders && appointment.prescription.length) {
     await MedicineReminder.deleteMany({ appointment: appointment._id });

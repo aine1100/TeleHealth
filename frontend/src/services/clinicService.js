@@ -1,8 +1,8 @@
 import api from './apiClient';
 
 export const clinicService = {
-  async getOverview() {
-    const response = await api.get('/api/clinics/overview');
+  async getOverview(params = {}) {
+    const response = await api.get('/api/clinics/overview', { params });
     return response.data;
   },
 

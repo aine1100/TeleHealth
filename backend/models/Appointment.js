@@ -79,10 +79,12 @@ const appointmentSchema = new mongoose.Schema({
     testName: String,
     testCode: String,
     instructions: String,
-    status: { 
-      type: String, 
-      enum: ['ordered', 'sample_collected', 'processing', 'completed'], 
-      default: 'ordered' 
+    lab: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    labOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'LabOrder' },
+    status: {
+      type: String,
+      enum: ['ordered', 'accepted', 'sample_collected', 'processing', 'completed', 'cancelled'],
+      default: 'ordered'
     },
     results: {
       value: String,
@@ -93,7 +95,7 @@ const appointmentSchema = new mongoose.Schema({
       completedAt: Date
     }
   }],
-  
+
   // Referral
   referral: {
     referredTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

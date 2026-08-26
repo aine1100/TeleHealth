@@ -31,6 +31,7 @@ router.get('/search', doctorController.searchDoctors);
 
 // Authenticated doctor self-service (before /:id)
 router.get('/me', ...doctorOnly, doctorController.getMyAccount);
+router.get('/me/overview', ...doctorOnly, doctorController.getOverview);
 router.patch('/me/profile', ...doctorOnly, profileValidation, doctorController.updateMyProfile);
 router.patch('/me/schedule', ...doctorOnly, doctorController.updateMySchedule);
 router.patch('/me/settings', ...doctorOnly, doctorController.updateMySettings);

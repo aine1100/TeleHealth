@@ -44,6 +44,7 @@ import PatientProfile from './pages/patient/PatientProfile';
 import PatientSettings from './pages/patient/PatientSettings';
 import PatientSupport from './pages/patient/PatientSupport';
 import PatientNotifications from './pages/patient/PatientNotifications';
+import PatientInsurance from './pages/patient/PatientInsurance';
 import PatientWaitingRoom from './pages/consult/PatientWaitingRoom';
 import VideoConsultPage from './pages/consult/VideoConsultPage';
 
@@ -66,6 +67,22 @@ import PharmacyProfile from './pages/pharmacy/PharmacyProfile';
 import PharmacySettings from './pages/pharmacy/PharmacySettings';
 import PharmacySupport from './pages/pharmacy/PharmacySupport';
 import PharmacyDetailPage from './components/pharmacy/PharmacyDetailPage';
+
+import InsuranceLayout from './layouts/InsuranceLayout';
+import InsuranceOverview from './pages/insurance/InsuranceOverview';
+import InsuranceMembers from './pages/insurance/InsuranceMembers';
+import InsuranceClaims from './pages/insurance/InsuranceClaims';
+import InsurancePlans from './pages/insurance/InsurancePlans';
+import InsuranceProfile from './pages/insurance/InsuranceProfile';
+import InsuranceSettings from './pages/insurance/InsuranceSettings';
+import InsuranceSupport from './pages/insurance/InsuranceSupport';
+
+import LabLayout from './layouts/LabLayout';
+import LabOverview from './pages/lab/LabOverview';
+import LabOrders from './pages/lab/LabOrders';
+import LabProfile from './pages/lab/LabProfile';
+import LabSettings from './pages/lab/LabSettings';
+import LabSupport from './pages/lab/LabSupport';
 
 import AdminLayout from './layouts/AdminLayout';
 import AdminOverview from './pages/admin/AdminOverview';
@@ -157,6 +174,7 @@ function AppRoutes() {
         <Route path="pharmacies/:pharmacyId" element={<PharmacyDetailPage role="patient" />} />
         <Route path="orders" element={<PatientPharmacyOrders />} />
         <Route path="medicines" element={<PatientMedicines />} />
+        <Route path="insurance" element={<PatientInsurance />} />
         <Route path="ai-screening" element={<PatientScreening />} />
         <Route path="notifications" element={<PatientNotifications />} />
         <Route path="profile" element={<PatientProfile />} />
@@ -263,21 +281,38 @@ function AppRoutes() {
       </Route>
 
       <Route
-        path="/lab/home"
+        path="/lab"
         element={
           <ProtectedRoute roles={['lab_tech']} requireOrgApproval>
-            <RoleHome title="Lab portal" blurb="Lab orders and results workflows coming next." />
+            <LabLayout />
           </ProtectedRoute>
         }
-      />
+      >
+        <Route path="home" element={<LabOverview />} />
+        <Route path="orders" element={<LabOrders />} />
+        <Route path="profile" element={<LabProfile />} />
+        <Route path="settings" element={<LabSettings />} />
+        <Route path="support" element={<LabSupport />} />
+        <Route index element={<Navigate to="home" replace />} />
+      </Route>
+
       <Route
-        path="/insurance/home"
+        path="/insurance"
         element={
           <ProtectedRoute roles={['insurance']} requireOrgApproval>
-            <RoleHome title="Insurance portal" blurb="Claims and coverage tools coming next." />
+            <InsuranceLayout />
           </ProtectedRoute>
         }
-      />
+      >
+        <Route path="home" element={<InsuranceOverview />} />
+        <Route path="members" element={<InsuranceMembers />} />
+        <Route path="claims" element={<InsuranceClaims />} />
+        <Route path="plans" element={<InsurancePlans />} />
+        <Route path="profile" element={<InsuranceProfile />} />
+        <Route path="settings" element={<InsuranceSettings />} />
+        <Route path="support" element={<InsuranceSupport />} />
+        <Route index element={<Navigate to="home" replace />} />
+      </Route>
 
       <Route
         path="*"

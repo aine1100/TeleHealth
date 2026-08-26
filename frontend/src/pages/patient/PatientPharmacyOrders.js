@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CreditCard, RefreshCw, Smartphone, Store } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -6,7 +6,10 @@ import { createPortal } from 'react-dom';
 import Dropdown from '../../components/auth/Dropdown';
 import { TextInput } from '../../components/auth/FormFields';
 import DataTable from '../../components/ui/DataTable';
+import ListPagination from '../../components/ui/ListPagination';
 import { pharmacyService } from '../../services/pharmacyService';
+
+const PAGE_SIZE = 10;
 
 const PAYMENT_METHODS = [
   { value: 'mtn_momo', label: 'MTN MoMo' },
@@ -135,33 +138,36 @@ const PayOrderModal = ({ open, order, onClose, onPaid }) => {
 const PatientPharmacyOrders = () => {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('all');
   const [payOrder, setPayOrder] = useState(null);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await pharmacyService.getMyOrders();
+      const params = { page, limit: PAGE_SIZE };
+      if (filter === 'unpaid') params.paymentStatus = 'unpaid';
+      if (filter === 'paid') params.paymentStatus = 'paid';
+      const res = await pharmacyService.getMyOrders(params);
       setOrders(res?.data || []);
+      setTotal(res?.total || 0);
     } catch (error) {
       toast.error(error?.response?.data?.message || 'Unable to load orders');
       setOrders([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, filter]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const rows = useMemo(() => {
-    if (filter === 'unpaid') return orders.filter((o) => o.payment?.status !== 'paid');
-    if (filter === 'paid') return orders.filter((o) => o.payment?.status === 'paid');
-    return orders;
-  }, [orders, filter]);
-
-  const unpaidCount = orders.filter((o) => o.payment?.status !== 'paid').length;
+  useEffect(() => {
+    setPage(1);
+  }, [filter]);
 
   const columns = [
     {
@@ -257,7 +263,7 @@ const PatientPharmacyOrders = () => {
               onChange={setFilter}
               options={[
                 { value: 'all', label: 'All orders' },
-                { value: 'unpaid', label: `Unpaid${unpaidCount ? ` (${unpaidCount})` : ''}` },
+                { value: 'unpaid', label: 'Unpaid' },
                 { value: 'paid', label: 'Paid / sent' }
               ]}
             />
@@ -280,12 +286,15 @@ const PatientPharmacyOrders = () => {
         </div>
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={rows}
-        loading={loading}
-        emptyText="No pharmacy orders yet. Browse a pharmacy catalog to place one."
-      />
+      <div className="space-y-3">
+        <DataTable
+          columns={columns}
+          rows={orders}
+          loading={loading}
+          emptyText="No pharmacy orders yet. Browse a pharmacy catalog to place one."
+        />
+        <ListPagination page={page} limit={PAGE_SIZE} total={total} onPageChange={setPage} />
+      </div>
 
       <PayOrderModal open={Boolean(payOrder)} order={payOrder} onClose={() => setPayOrder(null)} onPaid={load} />
     </div>

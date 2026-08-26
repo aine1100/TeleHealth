@@ -8,10 +8,24 @@ const { sendErrorResponse } = require('../utils/apiErrors');
 // Get my notifications
 router.get('/my-notifications', authenticate, async (req, res) => {
   try {
-    const notifications = await Notification.find({ recipient: req.user._id })
-      .sort({ createdAt: -1 })
-      .limit(50);
-    res.json({ success: true, count: notifications.length, data: notifications });
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
+    const skip = (page - 1) * limit;
+    const filter = { recipient: req.user._id };
+
+    const [notifications, total] = await Promise.all([
+      Notification.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Notification.countDocuments(filter)
+    ]);
+
+    res.json({
+      success: true,
+      count: notifications.length,
+      total,
+      page,
+      limit,
+      data: notifications
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

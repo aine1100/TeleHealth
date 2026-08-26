@@ -163,62 +163,173 @@ exports.listClinicPatients = async (clinicId) => {
   return Array.from(patientsMap.values());
 };
 
-exports.getDashboardOverview = async (clinicId) => {
-  const [appointments, doctors, recentInvites] = await Promise.all([
+exports.getDashboardOverview = async (clinicId, { rangeDays = 30 } = {}) => {
+  const days = Math.min(90, Math.max(7, Number(rangeDays) || 30));
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const rangeStart = new Date(startOfDay);
+  rangeStart.setDate(rangeStart.getDate() - (days - 1));
+  const startOfWeek = new Date(startOfDay);
+  startOfWeek.setDate(startOfWeek.getDate() - 6);
+
+  const doctorFilter = { role: 'doctor', 'doctorProfile.clinicId': clinicId };
+  const apptFilter = { clinic: clinicId, scheduledDate: { $gte: rangeStart } };
+
+  const [
+    appointments,
+    doctors,
+    recentInvites,
+    totalAppointments,
+    appointmentsToday,
+    completedToday,
+    completedInRange,
+    uniquePatientsAgg,
+    volumeByDayAgg,
+    typeMixAgg,
+    revenueAgg,
+    revenueTodayAgg,
+    revenueWeekAgg,
+    recentPayments
+  ] = await Promise.all([
     Appointment.find({ clinic: clinicId })
       .populate('patient doctor', 'firstName lastName phone avatar')
       .sort({ scheduledDate: -1 })
-      .limit(8),
-    User.find({ role: 'doctor', 'doctorProfile.clinicId': clinicId })
+      .limit(10)
+      .lean(),
+    User.find(doctorFilter)
       .select('firstName lastName email phone doctorProfile avatar')
       .sort({ createdAt: -1 })
-      .limit(8),
-    require('../models').DoctorInvite.find({ clinicId, status: 'pending' }).sort({ createdAt: -1 }).limit(4)
+      .limit(12)
+      .lean(),
+    require('../models').DoctorInvite.find({ clinicId, status: 'pending' }).sort({ createdAt: -1 }).limit(4).lean(),
+    Appointment.countDocuments({ clinic: clinicId }),
+    Appointment.countDocuments({
+      clinic: clinicId,
+      scheduledDate: { $gte: startOfDay, $lt: new Date(startOfDay.getTime() + 86400000) }
+    }),
+    Appointment.countDocuments({
+      clinic: clinicId,
+      status: 'completed',
+      scheduledDate: { $gte: startOfDay, $lt: new Date(startOfDay.getTime() + 86400000) }
+    }),
+    Appointment.countDocuments({
+      clinic: clinicId,
+      status: 'completed',
+      scheduledDate: { $gte: rangeStart }
+    }),
+    Appointment.aggregate([
+      { $match: { clinic: clinicId } },
+      { $group: { _id: '$patient' } },
+      { $count: 'count' }
+    ]),
+    Appointment.aggregate([
+      { $match: apptFilter },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$scheduledDate' } },
+          visits: { $sum: 1 },
+          completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+          revenue: {
+            $sum: {
+              $cond: [{ $eq: ['$payment.status', 'paid'] }, { $ifNull: ['$payment.totalAmount', 0] }, 0]
+            }
+          }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]),
+    Appointment.aggregate([
+      { $match: { clinic: clinicId, scheduledDate: { $gte: rangeStart } } },
+      { $group: { _id: '$type', count: { $sum: 1 } } }
+    ]),
+    Appointment.aggregate([
+      { $match: { clinic: clinicId, 'payment.status': 'paid' } },
+      { $group: { _id: null, total: { $sum: '$payment.totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    Appointment.aggregate([
+      {
+        $match: {
+          clinic: clinicId,
+          'payment.status': 'paid',
+          'payment.paidAt': { $gte: startOfDay }
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$payment.totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    Appointment.aggregate([
+      {
+        $match: {
+          clinic: clinicId,
+          'payment.status': 'paid',
+          'payment.paidAt': { $gte: startOfWeek }
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$payment.totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    Appointment.find({ clinic: clinicId, 'payment.status': 'paid' })
+      .populate('patient doctor', 'firstName lastName phone')
+      .select('type scheduledDate scheduledTime status payment patient doctor')
+      .sort({ 'payment.paidAt': -1, updatedAt: -1 })
+      .limit(8)
+      .lean()
   ]);
 
-  const today = new Date();
-  const todayAppointments = appointments.filter((item) => {
-    const scheduled = new Date(item.scheduledDate);
-    return scheduled.toDateString() === today.toDateString();
-  });
+  const dayMap = Object.fromEntries(
+    (volumeByDayAgg || []).map((row) => [
+      row._id,
+      { visits: row.visits || 0, completed: row.completed || 0, revenue: row.revenue || 0 }
+    ])
+  );
+  const engagementData = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const d = new Date(startOfDay);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    engagementData.push({
+      label: d.toLocaleDateString('en', { month: 'short', day: 'numeric' }),
+      date: key,
+      value: dayMap[key]?.visits || 0,
+      completed: dayMap[key]?.completed || 0,
+      revenue: dayMap[key]?.revenue || 0
+    });
+  }
 
-  const servedToday = todayAppointments.filter((item) => ['confirmed', 'completed', 'in_progress'].includes(item.status)).length;
-  const totalToday = todayAppointments.length;
-  const completionRate = totalToday > 0 ? Math.round((servedToday / totalToday) * 100) : 0;
-
-  const engagementData = Array.from({ length: 6 }, (_, index) => {
-    const date = new Date();
-    date.setDate(today.getDate() - (5 - index));
-    const dayValue = appointments.filter((item) => new Date(item.scheduledDate).toDateString() === date.toDateString()).length;
-    return { label: date.toLocaleDateString('en', { month: 'short', day: 'numeric' }), value: dayValue };
-  }).filter((item) => item.value > 0 || appointments.length === 0 || item.label);
-
-  const consultDistribution = Object.entries(
-    appointments.reduce((acc, item) => {
-      const key = item.type || 'in_person';
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {})
-  ).map(([key, value]) => ({
-    label: key === 'video' ? 'Video' : key === 'chat' ? 'Chat' : 'In-person',
-    value
+  const consultDistribution = (typeMixAgg || []).map((row) => ({
+    label: row._id === 'video' ? 'Video' : row._id === 'chat' ? 'Chat' : 'In-person',
+    value: row.count || 0
   }));
 
-  const productivityBars = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((label) => {
-    const value = appointments.filter((item) => new Date(item.scheduledDate).toLocaleDateString('en-US', { weekday: 'short' }) === label).length;
+  const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const productivityBars = weekdayLabels.map((label) => {
+    const value = (volumeByDayAgg || []).reduce((sum, row) => {
+      const d = new Date(`${row._id}T12:00:00`);
+      const short = d.toLocaleDateString('en-US', { weekday: 'short' });
+      return short === label ? sum + (row.visits || 0) : sum;
+    }, 0);
     return { label, value };
   });
 
+  const completionRate =
+    appointmentsToday > 0 ? Math.round((completedToday / appointmentsToday) * 100) : 0;
+
   return {
-    appointmentsCount: appointments.length,
-    consultsToday: servedToday,
+    rangeDays: days,
+    appointmentsCount: totalAppointments,
+    consultsToday: completedToday,
+    appointmentsToday,
+    completedInRange,
     doctorCount: doctors.length,
+    uniquePatients: uniquePatientsAgg[0]?.count || 0,
+    revenueTotal: revenueAgg[0]?.total || 0,
+    revenueToday: revenueTodayAgg[0]?.total || 0,
+    revenueWeek: revenueWeekAgg[0]?.total || 0,
+    paidVisits: revenueAgg[0]?.count || 0,
     pulse: {
-      totalToday,
-      servedToday,
+      totalToday: appointmentsToday,
+      servedToday: completedToday,
       completionRate
     },
-    recentInvites: recentInvites.map((invite) => ({
+    recentInvites: (recentInvites || []).map((invite) => ({
       email: invite.email,
       status: invite.status,
       createdAt: invite.createdAt
@@ -227,6 +338,19 @@ exports.getDashboardOverview = async (clinicId) => {
     consultDistribution,
     productivityBars,
     appointments,
-    doctors
+    doctors,
+    recentPayments: (recentPayments || []).map((appt) => ({
+      _id: appt._id,
+      patient: appt.patient,
+      doctor: appt.doctor,
+      type: appt.type,
+      status: appt.status,
+      scheduledDate: appt.scheduledDate,
+      scheduledTime: appt.scheduledTime,
+      amount: appt.payment?.totalAmount || 0,
+      method: appt.payment?.method || '',
+      transactionId: appt.payment?.transactionId || '',
+      paidAt: appt.payment?.paidAt || null
+    }))
   };
 };

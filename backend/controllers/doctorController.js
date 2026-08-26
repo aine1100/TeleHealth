@@ -51,6 +51,15 @@ exports.getMyAccount = async (req, res) => {
   }
 };
 
+exports.getOverview = async (req, res) => {
+  try {
+    const data = await doctorAccountService.getOverview(req.user);
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(getErrorStatus(error)).json({ success: false, message: error.message });
+  }
+};
+
 exports.updateMyProfile = async (req, res) => {
   const validationError = handleValidation(req, res);
   if (validationError) return validationError;

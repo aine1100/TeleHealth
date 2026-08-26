@@ -1,4 +1,4 @@
-const { User } = require('../models');
+const { User, Appointment } = require('../models');
 const { sendSupportRequestEmail } = require('../utils/emailService');
 
 const LANGUAGES = ['en', 'lg', 'sw', 'rn', 'luo', 'acholi'];
@@ -308,5 +308,180 @@ exports.submitSupportRequest = async (user, { subject, message, category }) => {
     received: true,
     emailed: Boolean(result?.success),
     reference: result?.reference || null
+  };
+};
+
+exports.getOverview = async (user) => {
+  const doctorId = user._id;
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(startOfDay.getTime() + 86400000);
+  const startOfWeek = new Date(startOfDay);
+  startOfWeek.setDate(startOfWeek.getDate() - 6);
+  const startOfMonth = new Date(startOfDay.getFullYear(), startOfDay.getMonth(), 1);
+  const last14 = new Date(startOfDay);
+  last14.setDate(last14.getDate() - 13);
+
+  const base = { doctor: doctorId };
+
+  const [
+    todayCount,
+    upcomingCount,
+    completedWeek,
+    completedMonth,
+    uniquePatientsAgg,
+    revenueTodayAgg,
+    revenueWeekAgg,
+    revenueMonthAgg,
+    revenueTotalAgg,
+    volumeByDayAgg,
+    typeMixAgg,
+    statusMixAgg,
+    recentAppointments,
+    recentPayments
+  ] = await Promise.all([
+    Appointment.countDocuments({
+      ...base,
+      scheduledDate: { $gte: startOfDay, $lt: endOfDay },
+      status: { $nin: ['cancelled'] }
+    }),
+    Appointment.countDocuments({
+      ...base,
+      scheduledDate: { $gte: startOfDay },
+      status: { $nin: ['cancelled', 'completed', 'no_show'] }
+    }),
+    Appointment.countDocuments({
+      ...base,
+      status: 'completed',
+      scheduledDate: { $gte: startOfWeek }
+    }),
+    Appointment.countDocuments({
+      ...base,
+      status: 'completed',
+      scheduledDate: { $gte: startOfMonth }
+    }),
+    Appointment.aggregate([
+      { $match: base },
+      { $group: { _id: '$patient' } },
+      { $count: 'count' }
+    ]),
+    Appointment.aggregate([
+      {
+        $match: {
+          ...base,
+          'payment.status': 'paid',
+          'payment.paidAt': { $gte: startOfDay }
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$payment.totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    Appointment.aggregate([
+      {
+        $match: {
+          ...base,
+          'payment.status': 'paid',
+          'payment.paidAt': { $gte: startOfWeek }
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$payment.totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    Appointment.aggregate([
+      {
+        $match: {
+          ...base,
+          'payment.status': 'paid',
+          'payment.paidAt': { $gte: startOfMonth }
+        }
+      },
+      { $group: { _id: null, total: { $sum: '$payment.totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    Appointment.aggregate([
+      { $match: { ...base, 'payment.status': 'paid' } },
+      { $group: { _id: null, total: { $sum: '$payment.totalAmount' }, count: { $sum: 1 } } }
+    ]),
+    Appointment.aggregate([
+      { $match: { ...base, scheduledDate: { $gte: last14 } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$scheduledDate' } },
+          visits: { $sum: 1 },
+          completed: { $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] } },
+          revenue: {
+            $sum: {
+              $cond: [{ $eq: ['$payment.status', 'paid'] }, { $ifNull: ['$payment.totalAmount', 0] }, 0]
+            }
+          }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]),
+    Appointment.aggregate([{ $match: base }, { $group: { _id: '$type', count: { $sum: 1 } } }]),
+    Appointment.aggregate([{ $match: base }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    Appointment.find({
+      ...base,
+      scheduledDate: { $gte: startOfDay },
+      status: { $nin: ['cancelled', 'no_show'] }
+    })
+      .populate('patient', 'firstName lastName phone')
+      .sort({ scheduledDate: 1, scheduledTime: 1 })
+      .limit(8)
+      .lean(),
+    Appointment.find({ ...base, 'payment.status': 'paid' })
+      .populate('patient', 'firstName lastName phone')
+      .select('type scheduledDate scheduledTime status payment patient')
+      .sort({ 'payment.paidAt': -1, updatedAt: -1 })
+      .limit(8)
+      .lean()
+  ]);
+
+  const dayMap = Object.fromEntries(
+    (volumeByDayAgg || []).map((row) => [
+      row._id,
+      { visits: row.visits || 0, completed: row.completed || 0, revenue: row.revenue || 0 }
+    ])
+  );
+  const visitsByDay = [];
+  for (let i = 13; i >= 0; i -= 1) {
+    const d = new Date(startOfDay);
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    visitsByDay.push({
+      date: key,
+      label: d.toLocaleDateString('en', { month: 'short', day: 'numeric' }),
+      visits: dayMap[key]?.visits || 0,
+      completed: dayMap[key]?.completed || 0,
+      revenue: dayMap[key]?.revenue || 0
+    });
+  }
+
+  return {
+    stats: {
+      todayCount,
+      upcomingCount,
+      completedWeek,
+      completedMonth,
+      uniquePatients: uniquePatientsAgg[0]?.count || 0,
+      revenueToday: revenueTodayAgg[0]?.total || 0,
+      revenueWeek: revenueWeekAgg[0]?.total || 0,
+      revenueMonth: revenueMonthAgg[0]?.total || 0,
+      revenueTotal: revenueTotalAgg[0]?.total || 0,
+      paidVisits: revenueTotalAgg[0]?.count || 0
+    },
+    visitsByDay,
+    typeMix: (typeMixAgg || []).map((row) => ({ type: row._id || 'in_person', count: row.count || 0 })),
+    statusMix: (statusMixAgg || []).map((row) => ({ status: row._id, count: row.count || 0 })),
+    upcoming: recentAppointments,
+    recentPayments: (recentPayments || []).map((appt) => ({
+      _id: appt._id,
+      patient: appt.patient,
+      type: appt.type,
+      status: appt.status,
+      scheduledDate: appt.scheduledDate,
+      scheduledTime: appt.scheduledTime,
+      amount: appt.payment?.totalAmount || 0,
+      method: appt.payment?.method || '',
+      transactionId: appt.payment?.transactionId || '',
+      paidAt: appt.payment?.paidAt || null
+    }))
   };
 };

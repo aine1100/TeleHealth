@@ -6,6 +6,11 @@ export const doctorService = {
     return response.data;
   },
 
+  async getOverview() {
+    const response = await api.get('/api/doctors/me/overview');
+    return response.data;
+  },
+
   async getAppointment(id) {
     const response = await api.get(`/api/appointments/${id}`);
     return response.data;

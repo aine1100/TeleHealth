@@ -74,6 +74,12 @@ exports.processDueMedicineReminders = async (io) => {
       const already = (reminder.notifiedSlots || []).some((slot) => slot.slotKey === slotKey);
       if (already) continue;
 
+      const alreadyLogged = (reminder.logs || []).some((log) => {
+        if (!log?.date || !['taken', 'skipped', 'missed'].includes(log.status)) return false;
+        return dateKey(new Date(log.date)) === today && String(log.time) === String(doseTime);
+      });
+      if (alreadyLogged) continue;
+
       await notificationService.notifyMedicineDose(reminder, {
         io,
         slotTime: doseTime,

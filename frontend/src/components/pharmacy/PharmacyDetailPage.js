@@ -9,17 +9,16 @@ import {
   MapPin,
   Phone,
   Search,
-  ShoppingCart,
   Store,
   Truck,
   UserRound
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import Dropdown from '../auth/Dropdown';
-import CatalogOrderModal from './CatalogOrderModal';
 import MedicineCard from './MedicineCard';
 import MedicineDetailModal from './MedicineDetailModal';
 import SendPrescriptionModal from './SendPrescriptionModal';
+import { useCartOptional } from '../../context/CartContext';
 import { pharmacyService } from '../../services/pharmacyService';
 import { patientService } from '../../services/patientService';
 import { doctorService } from '../../services/doctorService';
@@ -56,13 +55,12 @@ const PharmacyDetailPage = ({ role = 'patient' }) => {
   const [careRecords, setCareRecords] = useState([]);
   const [myOrders, setMyOrders] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
-  const [catalogCheckoutOpen, setCatalogCheckoutOpen] = useState(false);
   const [selectedMedicine, setSelectedMedicine] = useState(null);
-  const [cart, setCart] = useState([]);
   const [medicineQuery, setMedicineQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [stockFilter, setStockFilter] = useState('all');
   const [formFilter, setFormFilter] = useState('all');
+  const cart = useCartOptional();
 
   const load = async () => {
     const [pharmRes, careRes, orderRes] = await Promise.all([
@@ -71,7 +69,7 @@ const PharmacyDetailPage = ({ role = 'patient' }) => {
         ? doctorService.getMyAppointments().catch(() => ({ data: [] }))
         : patientService.getCareRecords().catch(() => ({ data: [] })),
       role === 'patient'
-        ? pharmacyService.getMyOrders().catch(() => ({ data: [] }))
+        ? pharmacyService.getMyOrders({ limit: 50 }).catch(() => ({ data: [] }))
         : Promise.resolve({ data: [] })
     ]);
 
@@ -164,58 +162,18 @@ const PharmacyDetailPage = ({ role = 'patient' }) => {
     });
   }, [medicines, medicineQuery, category, stockFilter, formFilter]);
 
-  const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const cartTotal = cart.reduce(
-    (sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 0),
-    0
-  );
+  const cartItems = useMemo(() => {
+    if (!cart?.pharmacy || String(cart.pharmacy._id) !== String(pharmacyId)) return [];
+    return cart.items || [];
+  }, [cart?.pharmacy, cart?.items, pharmacyId]);
   const cartMap = useMemo(
-    () => Object.fromEntries(cart.map((item) => [item._id, item.quantity])),
-    [cart]
+    () => Object.fromEntries(cartItems.map((item) => [item._id, item.quantity])),
+    [cartItems]
   );
 
   const addToCart = (medicine) => {
-    if (!canOrderCatalog) return;
-    if (!(Number(medicine.stockQuantity) > 0)) {
-      toast.error('This medicine is out of stock');
-      return;
-    }
-    setCart((prev) => {
-      const existing = prev.find((item) => item._id === medicine._id);
-      if (existing) {
-        const nextQty = existing.quantity + 1;
-        if (nextQty > Number(medicine.stockQuantity)) {
-          toast.error('Not enough stock');
-          return prev;
-        }
-        return prev.map((item) =>
-          item._id === medicine._id ? { ...item, quantity: nextQty } : item
-        );
-      }
-      return [
-        ...prev,
-        {
-          _id: medicine._id,
-          name: medicine.name,
-          price: medicine.price,
-          requiresPrescription: medicine.requiresPrescription,
-          stockQuantity: medicine.stockQuantity,
-          quantity: 1
-        }
-      ];
-    });
-    toast.success(`${medicine.name} added to order`);
-  };
-
-  const changeQty = (id, quantity) => {
-    setCart((prev) => {
-      if (quantity <= 0) return prev.filter((item) => item._id !== id);
-      return prev.map((item) => {
-        if (item._id !== id) return item;
-        const max = Number(item.stockQuantity) || quantity;
-        return { ...item, quantity: Math.min(quantity, max) };
-      });
-    });
+    if (!canOrderCatalog || !cart || !pharmacy) return;
+    cart.addItem(medicine, pharmacy);
   };
 
   if (loading) {
@@ -251,7 +209,7 @@ const PharmacyDetailPage = ({ role = 'patient' }) => {
   const rxCount = medicines.filter((med) => med.requiresPrescription).length;
 
   return (
-    <div className="mx-auto max-w-[1100px] animate-fade-up space-y-5 pb-24">
+    <div className="mx-auto max-w-[1100px] animate-fade-up space-y-5 pb-8">
       <div>
         <Link
           to={listPath}
@@ -497,29 +455,6 @@ const PharmacyDetailPage = ({ role = 'patient' }) => {
         </section>
       ) : null}
 
-      {canOrderCatalog && cartCount > 0 ? (
-        <div className="fixed bottom-4 left-1/2 z-30 w-[min(640px,calc(100%-1.5rem))] -translate-x-1/2">
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-white p-3 shadow-[0_12px_40px_rgba(15,23,42,0.16)]">
-            <div className="min-w-0 pl-1">
-              <p className="text-sm font-bold text-ink-900">
-                {cartCount} item{cartCount === 1 ? '' : 's'} · UGX {cartTotal.toLocaleString()}
-              </p>
-              <p className="truncate text-xs text-ink-500">
-                {cart.map((item) => `${item.name} ×${item.quantity}`).join(', ')}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setCatalogCheckoutOpen(true)}
-              className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600"
-            >
-              <ShoppingCart size={15} />
-              Checkout & pay
-            </button>
-          </div>
-        </div>
-      ) : null}
-
       <SendPrescriptionModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
@@ -527,20 +462,6 @@ const PharmacyDetailPage = ({ role = 'patient' }) => {
         careRecords={careRecords}
         onSent={async () => {
           setModalOpen(false);
-          if (role === 'patient') navigate('/patient/orders');
-          else await load();
-        }}
-      />
-
-      <CatalogOrderModal
-        open={catalogCheckoutOpen}
-        onClose={() => setCatalogCheckoutOpen(false)}
-        pharmacy={pharmacy}
-        cartItems={cart}
-        onChangeQty={changeQty}
-        onSent={async () => {
-          setCart([]);
-          setCatalogCheckoutOpen(false);
           if (role === 'patient') navigate('/patient/orders');
           else await load();
         }}

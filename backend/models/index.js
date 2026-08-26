@@ -6,6 +6,10 @@ const Otp = require('./Otp');
 const DoctorInvite = require('./DoctorInvite');
 const PharmacyMedicine = require('./PharmacyMedicine');
 const PharmacyOrder = require('./PharmacyOrder');
+const InsurancePlan = require('./InsurancePlan');
+const InsurancePolicy = require('./InsurancePolicy');
+const InsuranceClaim = require('./InsuranceClaim');
+const LabOrder = require('./LabOrder');
 
 module.exports = {
   User,
@@ -15,5 +19,9 @@ module.exports = {
   Otp,
   DoctorInvite,
   PharmacyMedicine,
-  PharmacyOrder
+  PharmacyOrder,
+  InsurancePlan,
+  InsurancePolicy,
+  InsuranceClaim,
+  LabOrder
 };
