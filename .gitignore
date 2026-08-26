@@ -4,8 +4,6 @@ backend/node_modules/
 frontend/node_modules/
 
 # Environment files
-.env
-.env.local
 .env.development.local
 .env.test.local
 .env.production.local
@@ -29,7 +27,6 @@ pnpm-debug.log*
 Thumbs.db
 
 # IDE files
-.vscode/
 .idea/
 
 # Uploads and local storage
@@ -44,3 +41,4 @@ docs/*.tmp
 # Temporary files
 *.swp
 *.swo
+config.bat

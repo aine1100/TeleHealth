@@ -16,12 +16,12 @@
     "tailwindcss": "^3.3.6"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "start:http": "set HTTPS=false&& react-scripts start",
-    "start:https": "set HTTPS=true&& react-scripts start",
-    "start:lan": "set HOST=0.0.0.0&& set HTTPS=false&& set DANGEROUSLY_DISABLE_HOST_CHECK=true&& react-scripts start",
-    "start:lan:https": "set HOST=0.0.0.0&& set HTTPS=true&& set DANGEROUSLY_DISABLE_HOST_CHECK=true&& react-scripts start",
-    "build": "react-scripts build",
+    "start": "node init && react-scripts start",
+    "start:http": "node init && set HTTPS=false&& react-scripts start",
+    "start:https": "node init && set HTTPS=true&& react-scripts start",
+    "start:lan": "node init && set HOST=0.0.0.0&& set HTTPS=false&& set DANGEROUSLY_DISABLE_HOST_CHECK=true&& react-scripts start",
+    "start:lan:https": "node init && set HOST=0.0.0.0&& set HTTPS=true&& set DANGEROUSLY_DISABLE_HOST_CHECK=true&& react-scripts start",
+    "build": "node init && react-scripts build",
     "test": "react-scripts test"
   },
   "eslintConfig": {
