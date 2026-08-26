@@ -4,12 +4,14 @@ import { toast } from 'react-hot-toast';
 import ConsultChatPanel from './ConsultChatPanel';
 import getSocket from '../../utils/socket';
 import { isSecureAppContext } from '../../utils/apiUrl';
+import {
+  getIceServers,
+  getMediaConstraints,
+  isIosDevice,
+  isMobileDevice,
+  playRemoteMedia
+} from '../../utils/webrtcConfig';
 import { appointmentConsultService } from '../../services/appointmentConsultService';
-
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' }
-];
 
 const idOf = (value) => (value == null ? '' : String(value));
 
@@ -29,34 +31,19 @@ const describeMediaError = (error) => {
   return error?.message || 'Unable to access camera or microphone.';
 };
 
-const AUDIO_CONSTRAINTS = {
-  echoCancellation: { ideal: true },
-  noiseSuppression: { ideal: true },
-  autoGainControl: { ideal: true },
-  // Chrome / Edge advanced AEC flags
-  googEchoCancellation: true,
-  googExperimentalEchoCancellation: true,
-  googNoiseSuppression: true,
-  googHighpassFilter: true,
-  googAutoGainControl: true
-};
-
 const applyAudioProcessing = async (stream) => {
+  if (isMobileDevice()) return stream;
   const audioTracks = stream?.getAudioTracks?.() || [];
   await Promise.all(
     audioTracks.map(async (track) => {
       try {
-        await track.applyConstraints({ advanced: [AUDIO_CONSTRAINTS] });
+        await track.applyConstraints({
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        });
       } catch {
-        try {
-          await track.applyConstraints({
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          });
-        } catch {
-          /* browser may ignore unsupported constraints */
-        }
+        /* browser may ignore unsupported constraints */
       }
     })
   );
@@ -71,18 +58,17 @@ const acquireLocalMedia = async () => {
     return { stream: new MediaStream(), mode: 'chat-only', warning: describeMediaError({ name: 'SecurityError' }) };
   }
 
+  const constraints = getMediaConstraints();
+
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user' },
-      audio: AUDIO_CONSTRAINTS
-    });
+    const stream = await navigator.mediaDevices.getUserMedia(constraints);
     await applyAudioProcessing(stream);
     return { stream, mode: 'full', warning: null };
   } catch (videoAudioError) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: false,
-        audio: AUDIO_CONSTRAINTS
+        audio: constraints.audio
       });
       await applyAudioProcessing(stream);
       return {
@@ -111,10 +97,13 @@ const attachLocalTracks = (pc, stream) => {
 const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartName, onEnded }) => {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const peerRef = useRef(null);
   const localStreamRef = useRef(null);
   const socketRef = useRef(null);
   const makingOfferRef = useRef(false);
+  const negotiatingRef = useRef(false);
   const politeRef = useRef(role !== 'doctor');
   const pendingCandidatesRef = useRef([]);
   const peerPresentRef = useRef(false);
@@ -135,6 +124,7 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
   const [retryingMedia, setRetryingMedia] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
   const [speakerVolume, setSpeakerVolume] = useState(0.7);
+  const [needsAudioUnlock, setNeedsAudioUnlock] = useState(false);
 
   useEffect(() => {
     myIdRef.current = idOf(userId);
@@ -149,7 +139,48 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
     if (remoteVideoRef.current) {
       remoteVideoRef.current.volume = speakerVolume;
     }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.volume = speakerVolume;
+    }
   }, [speakerVolume]);
+
+  const attachRemoteStream = useCallback(async () => {
+    const stream = remoteStreamRef.current;
+    if (!stream) return;
+
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = stream;
+      remoteVideoRef.current.muted = false;
+      remoteVideoRef.current.volume = speakerVolumeRef.current;
+    }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = stream;
+      remoteAudioRef.current.muted = false;
+      remoteAudioRef.current.volume = speakerVolumeRef.current;
+    }
+
+    await playRemoteMedia(remoteVideoRef.current, remoteAudioRef.current).catch(() => {
+      setNeedsAudioUnlock(true);
+    });
+    setStatus('connected');
+  }, []);
+
+  const addRemoteTrack = useCallback(
+    (track) => {
+      if (!track) return;
+      if (!remoteStreamRef.current) {
+        remoteStreamRef.current = new MediaStream();
+      }
+      const exists = remoteStreamRef.current
+        .getTracks()
+        .some((existing) => existing.id === track.id);
+      if (!exists) {
+        remoteStreamRef.current.addTrack(track);
+      }
+      attachRemoteStream();
+    },
+    [attachRemoteStream]
+  );
 
   const flushPendingCandidates = async () => {
     const pc = peerRef.current;
@@ -196,7 +227,10 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
     }
 
     pendingCandidatesRef.current = [];
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({
+      iceServers: getIceServers(),
+      iceCandidatePoolSize: 4
+    });
 
     // Helps ICE reach "connected" even when one side has no camera tracks
     try {
@@ -216,15 +250,11 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
     };
 
     pc.ontrack = (event) => {
-      const remoteStream = event.streams?.[0] || new MediaStream([event.track]);
-      if (remoteVideoRef.current) {
-        // Never mix local tracks into the remote element (causes feedback/echo)
-        remoteVideoRef.current.srcObject = remoteStream;
-        remoteVideoRef.current.muted = false;
-        remoteVideoRef.current.volume = speakerVolumeRef.current;
-        remoteVideoRef.current.play?.().catch(() => {});
+      if (event.streams?.[0]) {
+        event.streams[0].getTracks().forEach((track) => addRemoteTrack(track));
+        return;
       }
-      setStatus('connected');
+      addRemoteTrack(event.track);
     };
 
     pc.onconnectionstatechange = () => {
@@ -245,7 +275,7 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
     attachLocalTracks(pc, localStreamRef.current);
     peerRef.current = pc;
     return pc;
-  }, [appointmentId]);
+  }, [appointmentId, addRemoteTrack]);
 
   useEffect(() => {
     if (!appointmentId || !idOf(userId)) return undefined;
@@ -278,20 +308,27 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
     };
 
     const markPeerAndNegotiate = async () => {
+      if (negotiatingRef.current) return;
+      negotiatingRef.current = true;
       peerPresentRef.current = true;
       if (mounted) {
         setPeerPresent(true);
         setStatus((prev) => (prev === 'connected' ? prev : 'connecting'));
       }
-      // Doctor (impolite) creates offers; patient asks doctor to offer if needed
-      if (!politeRef.current) {
-        await createOffer();
-      } else {
-        socketInstance.emit('request-offer', {
-          appointmentId,
-          senderId: idOf(userId),
-          role
-        });
+      try {
+        if (!politeRef.current) {
+          await createOffer();
+        } else {
+          socketInstance.emit('request-offer', {
+            appointmentId,
+            senderId: idOf(userId),
+            role
+          });
+        }
+      } finally {
+        setTimeout(() => {
+          negotiatingRef.current = false;
+        }, 800);
       }
     };
 
@@ -332,9 +369,14 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
       if (!peerRef.current || idOf(senderId) === myIdRef.current) return;
       const pc = peerRef.current;
       const collision = makingOfferRef.current || pc.signalingState !== 'stable';
-      if (!politeRef.current && collision) return;
 
       try {
+        if (collision) {
+          if (!politeRef.current) return;
+          await pc.setLocalDescription({ type: 'rollback' });
+          makingOfferRef.current = false;
+        }
+
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         await flushPendingCandidates();
         const answer = await pc.createAnswer();
@@ -399,8 +441,11 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
         localStreamRef.current = stream;
         if (localVideoRef.current && stream.getVideoTracks().length) {
           localVideoRef.current.srcObject = stream;
+          localVideoRef.current.muted = true;
+          localVideoRef.current.play?.().catch(() => {});
         }
 
+        remoteStreamRef.current = null;
         createPeerConnection();
 
         socketInstance.on('connect', onSocketConnect);
@@ -455,6 +500,10 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
         localStreamRef.current.getTracks().forEach((t) => t.stop());
         localStreamRef.current = null;
       }
+      if (remoteStreamRef.current) {
+        remoteStreamRef.current.getTracks().forEach((t) => t.stop());
+        remoteStreamRef.current = null;
+      }
       if (peerRef.current) {
         peerRef.current.close();
         peerRef.current = null;
@@ -481,27 +530,34 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
   const retryCamera = async () => {
     setRetryingMedia(true);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: true,
-        audio: AUDIO_CONSTRAINTS
-      });
-      await applyAudioProcessing(stream);
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track) => track.stop());
       }
+      const constraints = getMediaConstraints();
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      await applyAudioProcessing(stream);
       localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+        localVideoRef.current.muted = true;
+        localVideoRef.current.play?.().catch(() => {});
+      }
       setMediaMode('full');
       setMediaWarning(null);
       setAudioEnabled(true);
       setVideoEnabled(true);
       setRetryKey((k) => k + 1);
       toast.success('Camera connected — reconnecting call');
-    } catch {
-      toast.error('Camera still unavailable.');
+    } catch (error) {
+      toast.error(describeMediaError(error));
     } finally {
       setRetryingMedia(false);
     }
+  };
+
+  const unlockRemoteAudio = async () => {
+    await playRemoteMedia(remoteVideoRef.current, remoteAudioRef.current);
+    setNeedsAudioUnlock(false);
   };
 
   const retryConnection = () => {
@@ -604,10 +660,13 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
       <div className={`grid gap-4 p-4 sm:p-5 ${chatOpen ? 'lg:grid-cols-[minmax(0,1fr)_320px]' : 'lg:grid-cols-1'}`}>
         <div className="flex min-h-[420px] flex-col">
           <div className="relative flex-1 overflow-hidden rounded-2xl border border-ink-100 bg-ink-50">
+            {/* iOS often needs a dedicated audio element for remote sound */}
+            <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" aria-hidden="true" />
             <video
               ref={remoteVideoRef}
               autoPlay
               playsInline
+              {...(isIosDevice() ? { 'webkit-playsinline': 'true' } : {})}
               className="h-full min-h-[320px] w-full bg-ink-100 object-cover"
             />
             {!connected ? (
@@ -631,6 +690,7 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
               autoPlay
               muted
               playsInline
+              {...(isIosDevice() ? { 'webkit-playsinline': 'true' } : {})}
               className={`absolute bottom-4 right-4 h-24 w-36 rounded-xl border-2 border-white bg-ink-200 object-cover shadow-lg sm:h-28 sm:w-44 ${
                 hasLocalVideo ? '' : 'hidden'
               }`}
@@ -661,6 +721,15 @@ const VideoConsultation = ({ appointmentId, userId, role, userName, counterpartN
           <p className="mt-1 text-center text-[11px] text-ink-400">
             Echo tip: use headphones, or lower speaker volume if you hear your own voice.
           </p>
+          {needsAudioUnlock ? (
+            <button
+              type="button"
+              onClick={unlockRemoteAudio}
+              className="mt-2 w-full rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-600"
+            >
+              Tap to enable sound
+            </button>
+          ) : null}
 
           <div className="mt-4 flex items-center justify-center gap-3">
             <button
