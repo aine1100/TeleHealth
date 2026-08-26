@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import VideoConsultation from '../../components/consult/VideoConsultation';
 import { useAuth } from '../../context/AuthContext';
+import { appointmentConsultService } from '../../services/appointmentConsultService';
 import { doctorService } from '../../services/doctorService';
 import { patientService } from '../../services/patientService';
 import { getDoctorName, getPatientName } from '../../utils/appointmentCalendar';
@@ -23,6 +24,17 @@ const VideoConsultPage = ({ role = 'patient' }) => {
     let mounted = true;
     const load = async () => {
       try {
+        if (role === 'doctor') {
+          try {
+            await appointmentConsultService.startVideoCall(appointmentId);
+          } catch (error) {
+            const message = error?.response?.data?.message || '';
+            if (!/already|progress|started/i.test(message)) {
+              throw error;
+            }
+          }
+        }
+
         const res =
           role === 'doctor'
             ? await doctorService.getAppointment(appointmentId)
@@ -32,7 +44,6 @@ const VideoConsultPage = ({ role = 'patient' }) => {
         const appt = res?.data || null;
         setAppointment(appt);
 
-        // Patients who arrive before the doctor starts stay in the waiting room
         if (
           role === 'patient' &&
           appt &&
