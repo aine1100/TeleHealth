@@ -28,6 +28,8 @@ const medicineRoutes = require('./routes/medicines');
 const notificationRoutes = require('./routes/notifications');
 const patientRoutes = require('./routes/patients');
 const pharmacyRoutes = require('./routes/pharmacies');
+const insuranceRoutes = require('./routes/insurance');
+const labRoutes = require('./routes/labs');
 
 const app = express();
 const server = http.createServer(app);
@@ -50,17 +52,30 @@ const io = new Server(server, {
 });
 app.set('io', io);
 
+const notificationService = require('./services/notificationService');
+notificationService.setNotificationIo(io);
+
 const { startMedicineReminderScheduler } = require('./services/medicineReminderScheduler');
 startMedicineReminderScheduler(io);
 
 io.on('connection', (socket) => {
   socket.on('join-user-room', ({ userId, role }) => {
     if (!userId) return;
+    socket.join(`user-${userId}`);
     if (role === 'doctor') {
       socket.join(`doctor-waiting-${userId}`);
     }
     if (role === 'patient') {
       socket.join(`patient-${userId}`);
+    }
+    if (role === 'pharmacist') {
+      socket.join(`pharmacy-${userId}`);
+    }
+    if (role === 'insurance') {
+      socket.join(`insurance-${userId}`);
+    }
+    if (role === 'lab_tech') {
+      socket.join(`lab-${userId}`);
     }
   });
 
@@ -168,7 +183,7 @@ app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 1000 // limit each IP to 100 requests per windowMs
 });
 app.use('/api/', limiter);
 
@@ -218,6 +233,8 @@ app.use('/api/medicines', medicineRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/patients', patientRoutes);
 app.use('/api/pharmacies', pharmacyRoutes);
+app.use('/api/insurance', insuranceRoutes);
+app.use('/api/labs', labRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

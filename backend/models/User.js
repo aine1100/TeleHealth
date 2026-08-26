@@ -142,13 +142,16 @@ const userSchema = new mongoose.Schema({
     verificationNotes: { type: String }
   },
   
-  // Insurance
+  // Insurance (legacy denormalized mirror — source of truth is InsurancePolicy)
   insurance: {
-    provider: { type: String }, // NHIF, UAP, Jubilee, AAR, etc.
+    provider: { type: String },
+    providerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    policyId: { type: mongoose.Schema.Types.ObjectId, ref: 'InsurancePolicy' },
     policyNumber: { type: String },
     coverageType: { type: String },
     validFrom: { type: Date },
     validUntil: { type: Date },
+    documentUrl: { type: String },
     isVerified: { type: Boolean, default: false }
   },
   

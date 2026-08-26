@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, CalendarDays, CreditCard, Smartphone } from 'lucide-react';
+import { ArrowLeft, CalendarDays, CreditCard, Shield, Smartphone } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { TextInput, TextTextarea } from '../../components/auth/FormFields';
 import Dropdown from '../../components/auth/Dropdown';
 import { useAuth } from '../../context/AuthContext';
 import { patientService } from '../../services/patientService';
+import { insuranceService } from '../../services/insuranceService';
 import { formatTimeLabel } from '../../utils/appointmentCalendar';
 
 const TYPE_OPTIONS = [
@@ -16,7 +17,8 @@ const TYPE_OPTIONS = [
 
 const PAYMENT_METHODS = [
   { value: 'mtn_momo', label: 'MTN Mobile Money' },
-  { value: 'airtel_money', label: 'Airtel Money' }
+  { value: 'airtel_money', label: 'Airtel Money' },
+  { value: 'insurance', label: 'Insurance (co-pay)' }
 ];
 
 const DEFAULT_FEE = 25000;
@@ -31,6 +33,7 @@ const PatientBook = () => {
   const [saving, setSaving] = useState(false);
   const [doctor, setDoctor] = useState(null);
   const [availabilityDays, setAvailabilityDays] = useState([]);
+  const [insuranceQuote, setInsuranceQuote] = useState(null);
   const [form, setForm] = useState({
     scheduledDate: '',
     scheduledTime: '',
@@ -112,6 +115,34 @@ const PatientBook = () => {
 
   const totalAmount = consultationFee + PLATFORM_FEE;
 
+  const amountDue =
+    form.paymentMethod === 'insurance' && insuranceQuote?.eligible
+      ? insuranceQuote.patientShare
+      : totalAmount;
+
+  useEffect(() => {
+    let mounted = true;
+    if (form.paymentMethod !== 'insurance') {
+      setInsuranceQuote(null);
+      return undefined;
+    }
+    const loadQuote = async () => {
+      try {
+        const res = await insuranceService.quote({
+          amount: totalAmount,
+          benefitType: 'consult'
+        });
+        if (mounted) setInsuranceQuote(res?.data || null);
+      } catch {
+        if (mounted) setInsuranceQuote({ eligible: false, message: 'Unable to check insurance' });
+      }
+    };
+    loadQuote();
+    return () => {
+      mounted = false;
+    };
+  }, [form.paymentMethod, totalAmount]);
+
   const onChange = (e) => setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
 
   const onSubmit = async (e) => {
@@ -120,8 +151,12 @@ const PatientBook = () => {
       toast.error('Pick a date and time');
       return;
     }
-    if (!form.phoneNumber.trim()) {
+    if (form.paymentMethod !== 'insurance' && !form.phoneNumber.trim()) {
       toast.error('Enter a mobile money number');
+      return;
+    }
+    if (form.paymentMethod === 'insurance' && !insuranceQuote?.eligible) {
+      toast.error(insuranceQuote?.message || 'Link and verify insurance first');
       return;
     }
 
@@ -140,12 +175,19 @@ const PatientBook = () => {
         throw new Error('Booking failed');
       }
 
-      await patientService.mockPay(appointmentId, {
+      const payRes = await patientService.mockPay(appointmentId, {
         method: form.paymentMethod,
-        phoneNumber: form.phoneNumber.trim()
+        phoneNumber: form.phoneNumber.trim() || undefined
       });
 
-      toast.success('Booked and paid — waiting for doctor approval');
+      if (form.paymentMethod === 'insurance') {
+        toast.success(
+          payRes?.message ||
+            `Booked with insurance. You pay UGX ${Number(amountDue).toLocaleString()}`
+        );
+      } else {
+        toast.success('Booked and paid — waiting for doctor approval');
+      }
       navigate('/patient/appointments');
     } catch (error) {
       toast.error(error?.response?.data?.message || 'Unable to complete booking');
@@ -302,20 +344,49 @@ const PatientBook = () => {
                         onChange={() => setForm((prev) => ({ ...prev, paymentMethod: option.value }))}
                         className="h-4 w-4 border-ink-300 text-brand-500 focus:ring-brand-500"
                       />
-                      <Smartphone size={15} className="text-brand-500" />
+                      {option.value === 'insurance' ? (
+                        <Shield size={15} className="text-brand-500" />
+                      ) : (
+                        <Smartphone size={15} className="text-brand-500" />
+                      )}
                       {option.label}
                     </label>
                   ))}
                 </div>
               </fieldset>
-              <TextInput
-                label="Mobile money number"
-                name="phoneNumber"
-                value={form.phoneNumber}
-                onChange={onChange}
-                placeholder="+256700000000"
-                required
-              />
+
+              {form.paymentMethod === 'insurance' ? (
+                <div className="rounded-xl border border-brand-200 bg-white px-3 py-3 text-sm text-ink-600">
+                  {insuranceQuote?.eligible ? (
+                    <>
+                      <p className="font-semibold text-ink-900">
+                        {insuranceQuote.planName || 'Your plan'} · {insuranceQuote.policyNumber}
+                      </p>
+                      <p className="mt-1">
+                        You pay <span className="font-bold text-brand-700">UGX {Number(insuranceQuote.patientShare || 0).toLocaleString()}</span>
+                        {' · '}
+                        Insurer covers UGX {Number(insuranceQuote.insurerShare || 0).toLocaleString()}
+                      </p>
+                    </>
+                  ) : (
+                    <p>
+                      {insuranceQuote?.message || 'Checking coverage…'}{' '}
+                      <Link to="/patient/insurance" className="font-semibold text-brand-600">
+                        Set up insurance →
+                      </Link>
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <TextInput
+                  label="Mobile money number"
+                  name="phoneNumber"
+                  value={form.phoneNumber}
+                  onChange={onChange}
+                  placeholder="+256700000000"
+                  required
+                />
+              )}
             </div>
           </div>
 
@@ -325,7 +396,11 @@ const PatientBook = () => {
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-5 py-3 text-sm font-semibold text-white shadow-sm shadow-brand-500/20 hover:bg-brand-600 disabled:opacity-60"
           >
             <CreditCard size={16} />
-            {saving ? 'Processing…' : `Book & pay UGX ${totalAmount.toLocaleString()}`}
+            {saving
+              ? 'Processing…'
+              : form.paymentMethod === 'insurance'
+                ? `Book · pay co-pay UGX ${Number(amountDue).toLocaleString()}`
+                : `Book & pay UGX ${totalAmount.toLocaleString()}`}
           </button>
         </form>
       </div>

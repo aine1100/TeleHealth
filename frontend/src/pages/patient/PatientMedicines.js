@@ -1,14 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, BellRing, Check, Clock, Pause, Pill, Plus, Save, Trash2, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { TextInput, TextTextarea } from '../../components/auth/FormFields';
 import Dropdown from '../../components/auth/Dropdown';
+import ListPagination from '../../components/ui/ListPagination';
 import { patientService } from '../../services/patientService';
 import {
   enableDeviceNotifications,
   getNotificationPermission,
   isDeviceNotificationSupported
 } from '../../utils/deviceNotifications';
+
+const PAGE_SIZE = 10;
 
 const FREQUENCY_OPTIONS = [
   { value: 'once_daily', label: 'Once daily' },
@@ -29,14 +32,47 @@ const emptyForm = {
 
 const formatFrequency = (value) => (value || '').replace(/_/g, ' ');
 
-const isDueToday = (times = []) => {
-  if (!times.length) return true;
+const isSameDay = (value, now = new Date()) => {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  );
+};
+
+const normalizeHm = (value) => {
+  const [hRaw, mRaw] = String(value || '').split(':');
+  const h = Number(hRaw);
+  const m = Number(mRaw);
+  if (Number.isNaN(h) || Number.isNaN(m)) return String(value || '');
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+};
+
+const hasLoggedSlotToday = (reminder, slotTime) => {
+  const target = normalizeHm(slotTime);
+  return (reminder.logs || []).some((log) => {
+    if (!['taken', 'skipped', 'missed'].includes(log.status)) return false;
+    if (!isSameDay(log.date)) return false;
+    return normalizeHm(log.time) === target;
+  });
+};
+
+/** Slots due now or earlier today that have not been logged yet */
+const getPendingDueSlots = (reminder) => {
+  const times = Array.isArray(reminder.times) && reminder.times.length ? reminder.times : ['08:00'];
   const now = new Date();
   const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  return times.some((slot) => {
-    const [h, m] = slot.split(':').map(Number);
+
+  return times.filter((slot) => {
+    if (hasLoggedSlotToday(reminder, slot)) return false;
+    const [h, m] = normalizeHm(slot).split(':').map(Number);
     const slotMinutes = h * 60 + (m || 0);
-    return slotMinutes >= currentMinutes - 60;
+    // Show once the dose window opens (up to 12h early for morning doses overnight is too much;
+    // show slots that are within past 14h or next 30 minutes)
+    return slotMinutes <= currentMinutes + 30 && slotMinutes >= currentMinutes - 14 * 60;
   });
 };
 
@@ -45,30 +81,38 @@ const PatientMedicines = () => {
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
   const [reminders, setReminders] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [form, setForm] = useState(emptyForm);
   const [loggingId, setLoggingId] = useState(null);
   const [enablingPush, setEnablingPush] = useState(false);
   const [pushPermission, setPushPermission] = useState(getNotificationPermission());
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await patientService.getReminders();
+      const res = await patientService.getReminders({ page, limit: PAGE_SIZE });
       setReminders(res?.data || []);
+      setTotal(res?.total || 0);
     } catch (error) {
       toast.error(error?.response?.data?.message || 'Unable to load reminders');
       setReminders([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
-  };
+  }, [page]);
 
   useEffect(() => {
     load();
-  }, []);
+  }, [load]);
 
   const todayReminders = useMemo(
-    () => reminders.filter((item) => item.status === 'active' && isDueToday(item.times)),
+    () =>
+      reminders
+        .filter((item) => item.status === 'active')
+        .map((item) => ({ ...item, pendingSlots: getPendingDueSlots(item) }))
+        .filter((item) => item.pendingSlots.length > 0),
     [reminders]
   );
 
@@ -99,7 +143,8 @@ const PatientMedicines = () => {
       toast.success('Reminder added');
       setForm(emptyForm);
       setOpen(false);
-      await load();
+      if (page !== 1) setPage(1);
+      else await load();
     } catch (error) {
       toast.error(error?.response?.data?.message || 'Unable to add reminder');
     } finally {
@@ -107,10 +152,10 @@ const PatientMedicines = () => {
     }
   };
 
-  const logDose = async (id, status) => {
+  const logDose = async (id, status, time) => {
     setLoggingId(id);
     try {
-      await patientService.logDose(id, { status });
+      await patientService.logDose(id, { status, time });
       toast.success(status === 'taken' ? 'Marked as taken' : 'Dose skipped');
       await load();
     } catch (error) {
@@ -209,8 +254,8 @@ const PatientMedicines = () => {
       ) : null}
       <div className="mt-5 grid gap-4 sm:grid-cols-3">
         {[
-          { label: 'Active reminders', value: activeCount, icon: Pill, tone: 'bg-brand-50 text-brand-700' },
-          { label: 'Due today', value: todayReminders.length, icon: Bell, tone: 'bg-amber-50 text-amber-700' },
+          { label: 'Active (this page)', value: activeCount, icon: Pill, tone: 'bg-brand-50 text-brand-700' },
+          { label: 'Due now', value: todayReminders.length, icon: Bell, tone: 'bg-amber-50 text-amber-700' },
           {
             label: 'Avg adherence',
             value: reminders.length
@@ -243,43 +288,49 @@ const PatientMedicines = () => {
             <h2 className="text-sm font-bold text-brand-700">Today&apos;s reminders</h2>
           </div>
           <div className="mt-4 space-y-3">
-            {todayReminders.map((item) => (
-              <div
-                key={`today-${item._id}`}
-                className="flex flex-col gap-3 rounded-xl border border-white bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="font-bold text-ink-900">{item.medicineName}</p>
-                  <p className="mt-1 text-sm text-ink-500">
-                    {item.dosage} · {formatFrequency(item.frequency)}
-                  </p>
-                  <p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-brand-600">
-                    <Clock size={13} />
-                    {item.times?.join(', ') || 'Any time today'}
-                  </p>
+            {todayReminders.map((item) => {
+              const slot = item.pendingSlots[0];
+              return (
+                <div
+                  key={`today-${item._id}-${slot}`}
+                  className="flex flex-col gap-3 rounded-xl border border-white bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="font-bold text-ink-900">{item.medicineName}</p>
+                    <p className="mt-1 text-sm text-ink-500">
+                      {item.dosage} · {formatFrequency(item.frequency)}
+                    </p>
+                    <p className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-brand-600">
+                      <Clock size={13} />
+                      Due at {slot}
+                      {item.pendingSlots.length > 1
+                        ? ` · ${item.pendingSlots.length} doses pending`
+                        : ''}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={loggingId === item._id}
+                      onClick={() => logDose(item._id, 'taken', slot)}
+                      className="inline-flex items-center gap-1.5 rounded-xl bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60"
+                    >
+                      <Check size={15} />
+                      Taken
+                    </button>
+                    <button
+                      type="button"
+                      disabled={loggingId === item._id}
+                      onClick={() => logDose(item._id, 'skipped', slot)}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 bg-white px-4 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-50 disabled:opacity-60"
+                    >
+                      <X size={15} />
+                      Skip
+                    </button>
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    disabled={loggingId === item._id}
-                    onClick={() => logDose(item._id, 'taken')}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60"
-                  >
-                    <Check size={15} />
-                    Taken
-                  </button>
-                  <button
-                    type="button"
-                    disabled={loggingId === item._id}
-                    onClick={() => logDose(item._id, 'skipped')}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-ink-200 bg-white px-4 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-50 disabled:opacity-60"
-                  >
-                    <X size={15} />
-                    Skip
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       ) : null}
@@ -321,80 +372,93 @@ const PatientMedicines = () => {
             Loading reminders…
           </div>
         ) : reminders.length ? (
-          reminders.map((item) => (
-            <article key={item._id} className="rounded-2xl border border-ink-200/70 bg-white p-5 shadow-card">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-lg font-bold text-ink-900">{item.medicineName}</p>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${
-                        item.status === 'active'
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : item.status === 'paused'
-                            ? 'bg-amber-50 text-amber-700'
-                            : 'bg-ink-100 text-ink-500'
-                      }`}
-                    >
-                      {item.status}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-sm text-ink-500">
-                    {item.dosage} · {formatFrequency(item.frequency)}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-3 text-xs text-ink-500">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-semibold text-brand-700">
-                      <Clock size={12} />
-                      {item.times?.join(', ') || 'Scheduled'}
-                    </span>
-                    {item.duration ? <span>Duration: {item.duration}</span> : null}
-                    <span>Adherence: {item.adherenceRate ?? 100}%</span>
-                  </div>
-                  <p className="mt-3 text-sm text-ink-600">{item.instructions || 'Take as prescribed.'}</p>
-                </div>
+          <>
+            {reminders.map((item) => {
+              const pending = item.status === 'active' ? getPendingDueSlots(item) : [];
+              const nextSlot = pending[0];
+              return (
+                <article key={item._id} className="rounded-2xl border border-ink-200/70 bg-white p-5 shadow-card">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-lg font-bold text-ink-900">{item.medicineName}</p>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${
+                            item.status === 'active'
+                              ? 'bg-emerald-50 text-emerald-700'
+                              : item.status === 'paused'
+                                ? 'bg-amber-50 text-amber-700'
+                                : 'bg-ink-100 text-ink-500'
+                          }`}
+                        >
+                          {item.status}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-sm text-ink-500">
+                        {item.dosage} · {formatFrequency(item.frequency)}
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-3 text-xs text-ink-500">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-1 font-semibold text-brand-700">
+                          <Clock size={12} />
+                          {item.times?.join(', ') || 'Scheduled'}
+                        </span>
+                        {item.duration ? <span>Duration: {item.duration}</span> : null}
+                        <span>Adherence: {item.adherenceRate ?? 100}%</span>
+                      </div>
+                      <p className="mt-3 text-sm text-ink-600">{item.instructions || 'Take as prescribed.'}</p>
+                    </div>
 
-                <div className="flex flex-wrap gap-2 lg:flex-col lg:items-stretch">
-                  {item.status === 'active' ? (
-                    <>
+                    <div className="flex flex-wrap gap-2 lg:flex-col lg:items-stretch">
+                      {item.status === 'active' ? (
+                        nextSlot ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={loggingId === item._id}
+                              onClick={() => logDose(item._id, 'taken', nextSlot)}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60"
+                            >
+                              <Check size={15} />
+                              Mark taken ({nextSlot})
+                            </button>
+                            <button
+                              type="button"
+                              disabled={loggingId === item._id}
+                              onClick={() => logDose(item._id, 'skipped', nextSlot)}
+                              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-50 disabled:opacity-60"
+                            >
+                              Skip dose
+                            </button>
+                          </>
+                        ) : (
+                          <span className="rounded-xl bg-emerald-50 px-4 py-2 text-center text-sm font-semibold text-emerald-700">
+                            Caught up for now
+                          </span>
+                        )
+                      ) : null}
                       <button
                         type="button"
-                        disabled={loggingId === item._id}
-                        onClick={() => logDose(item._id, 'taken')}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-60"
+                        onClick={() => togglePause(item)}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-50"
                       >
-                        <Check size={15} />
-                        Mark taken
+                        <Pause size={15} />
+                        {item.status === 'paused' ? 'Resume' : 'Pause'}
                       </button>
                       <button
                         type="button"
-                        disabled={loggingId === item._id}
-                        onClick={() => logDose(item._id, 'skipped')}
-                        className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-50 disabled:opacity-60"
+                        onClick={() => removeReminder(item._id)}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
                       >
-                        Skip dose
+                        <Trash2 size={15} />
+                        Remove
                       </button>
-                    </>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => togglePause(item)}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-ink-200 px-4 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-50"
-                  >
-                    <Pause size={15} />
-                    {item.status === 'paused' ? 'Resume' : 'Pause'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeReminder(item._id)}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-200 px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50"
-                  >
-                    <Trash2 size={15} />
-                    Remove
-                  </button>
-                </div>
-              </div>
-            </article>
-          ))
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+            <ListPagination page={page} limit={PAGE_SIZE} total={total} onPageChange={setPage} />
+          </>
         ) : (
           <div className="rounded-2xl border border-ink-200/70 bg-white p-10 text-center text-sm text-ink-500 shadow-card">
             No active medicine reminders yet. Add your first one to get started.

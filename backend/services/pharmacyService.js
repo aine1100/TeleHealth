@@ -772,26 +772,67 @@ exports.payPharmacyOrder = async ({ user, orderId, body = {} }) => {
   return order;
 };
 
-exports.listMyOrders = async (user) => {
+const applyCatalogStockChange = async (order, direction) => {
+  for (const item of order.items || []) {
+    if (!item.catalogMedicine) continue;
+    const qty = Math.max(1, Number(item.quantity) || 1);
+    const med = await PharmacyMedicine.findById(item.catalogMedicine);
+    if (!med) continue;
+
+    if (direction === 'decrement') {
+      if (Number(med.stockQuantity) < qty) {
+        const error = new Error(
+          `${med.name} does not have enough stock to accept this order (need ${qty}, have ${med.stockQuantity})`
+        );
+        error.statusCode = 400;
+        throw error;
+      }
+      med.stockQuantity = Number(med.stockQuantity) - qty;
+    } else {
+      med.stockQuantity = Number(med.stockQuantity || 0) + qty;
+    }
+    await med.save();
+  }
+};
+
+exports.listMyOrders = async (user, query = {}) => {
   const filter = {};
   if (user.role === 'pharmacist') {
     filter.pharmacy = user._id;
     filter['payment.status'] = 'paid';
-  } else if (user.role === 'patient') filter.patient = user._id;
-  else if (user.role === 'doctor') filter.$or = [{ doctor: user._id }, { requestedBy: user._id }];
+  } else if (user.role === 'patient') {
+    filter.patient = user._id;
+    if (query.paymentStatus === 'paid') filter['payment.status'] = 'paid';
+    else if (query.paymentStatus === 'unpaid') filter['payment.status'] = { $ne: 'paid' };
+  } else if (user.role === 'doctor') filter.$or = [{ doctor: user._id }, { requestedBy: user._id }];
   else if (user.role !== 'admin') {
     const error = new Error('Access denied');
     error.statusCode = 403;
     throw error;
   }
 
-  return PharmacyOrder.find(filter)
-    .populate('pharmacy', pharmacyPublicFields)
-    .populate('patient', 'firstName lastName phone')
-    .populate('doctor', 'firstName lastName')
-    .populate('appointment', 'scheduledDate scheduledTime diagnosis')
-    .sort({ createdAt: -1 })
-    .lean();
+  if (query.orderType === 'catalog' || query.orderType === 'prescription') {
+    filter.orderType = query.orderType;
+  }
+
+  const page = Math.max(1, Number(query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(query.limit) || 10));
+  const skip = (page - 1) * limit;
+
+  const [data, total] = await Promise.all([
+    PharmacyOrder.find(filter)
+      .populate('pharmacy', pharmacyPublicFields)
+      .populate('patient', 'firstName lastName phone')
+      .populate('doctor', 'firstName lastName')
+      .populate('appointment', 'scheduledDate scheduledTime diagnosis')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    PharmacyOrder.countDocuments(filter)
+  ]);
+
+  return { data, total, page, limit };
 };
 
 exports.updateOrderStatus = async ({ user, orderId, body }) => {
@@ -831,6 +872,16 @@ exports.updateOrderStatus = async ({ user, orderId, body }) => {
     const error = new Error('Only delivery orders can be marked out for delivery');
     error.statusCode = 400;
     throw error;
+  }
+
+  // Deduct catalog stock when pharmacy accepts; restore if rejected/cancelled after deduction
+  if (status === 'accepted' && !order.inventoryDeducted) {
+    await applyCatalogStockChange(order, 'decrement');
+    order.inventoryDeducted = true;
+  }
+  if (['rejected', 'cancelled'].includes(status) && order.inventoryDeducted) {
+    await applyCatalogStockChange(order, 'restore');
+    order.inventoryDeducted = false;
   }
 
   order.status = status;

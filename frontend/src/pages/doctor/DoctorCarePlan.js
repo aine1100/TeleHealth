@@ -5,6 +5,7 @@ import { toast } from 'react-hot-toast';
 import { TextInput, TextTextarea } from '../../components/auth/FormFields';
 import Dropdown from '../../components/auth/Dropdown';
 import { doctorService } from '../../services/doctorService';
+import { labService } from '../../services/labService';
 import { getPatientName } from '../../utils/appointmentCalendar';
 
 const emptyRx = () => ({
@@ -19,7 +20,9 @@ const emptyRx = () => ({
 const emptyLab = () => ({
   testName: '',
   testCode: '',
-  instructions: ''
+  instructions: '',
+  labId: '',
+  priority: 'routine'
 });
 
 const FREQUENCY_OPTIONS = [
@@ -41,8 +44,22 @@ const DoctorCarePlan = () => {
   const [notes, setNotes] = useState('');
   const [prescription, setPrescription] = useState([emptyRx()]);
   const [labOrders, setLabOrders] = useState([emptyLab()]);
+  const [labOptions, setLabOptions] = useState([{ value: '', label: 'Any lab (open pool)' }]);
   const [createReminders, setCreateReminders] = useState(true);
   const [markCompleted, setMarkCompleted] = useState(true);
+
+  useEffect(() => {
+    labService
+      .listLabs({ limit: 50 })
+      .then((res) => {
+        const options = (res?.data || []).map((lab) => ({
+          value: lab._id,
+          label: lab.displayName || lab.organizationProfile?.organizationName || 'Lab'
+        }));
+        setLabOptions([{ value: '', label: 'Any lab (open pool)' }, ...options]);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -281,6 +298,21 @@ const DoctorCarePlan = () => {
                     value={lab.testCode}
                     onChange={(e) => updateLab(index, 'testCode', e.target.value)}
                     placeholder="e.g. CBC"
+                  />
+                  <Dropdown
+                    label="Laboratory"
+                    value={lab.labId || ''}
+                    onChange={(value) => updateLab(index, 'labId', value)}
+                    options={labOptions}
+                  />
+                  <Dropdown
+                    label="Priority"
+                    value={lab.priority || 'routine'}
+                    onChange={(value) => updateLab(index, 'priority', value)}
+                    options={[
+                      { value: 'routine', label: 'Routine' },
+                      { value: 'urgent', label: 'Urgent' }
+                    ]}
                   />
                   <div className="sm:col-span-2">
                     <TextInput

@@ -82,6 +82,8 @@ const pharmacyOrderSchema = new mongoose.Schema(
     rejectionReason: { type: String, trim: true },
     totalAmount: { type: Number, default: 0, min: 0 },
     currency: { type: String, default: 'UGX' },
+    /** True after catalog item quantities were subtracted from PharmacyMedicine stock */
+    inventoryDeducted: { type: Boolean, default: false },
     payment: {
       status: {
         type: String,

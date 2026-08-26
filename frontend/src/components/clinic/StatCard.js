@@ -1,10 +1,11 @@
 import React from 'react';
-import { CalendarCheck, Stethoscope, Video } from 'lucide-react';
+import { CalendarCheck, Stethoscope, Video, Wallet } from 'lucide-react';
 
 const iconMap = {
   CalendarCheck,
   Stethoscope,
-  Video
+  Video,
+  Wallet
 };
 
 const toneStyles = {

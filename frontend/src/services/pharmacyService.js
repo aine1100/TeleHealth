@@ -11,8 +11,8 @@ export const pharmacyService = {
     return response.data;
   },
 
-  async getMyOrders() {
-    const response = await api.get('/api/pharmacies/orders/mine');
+  async getMyOrders(params = {}) {
+    const response = await api.get('/api/pharmacies/orders/mine', { params });
     return response.data;
   },
 
@@ -51,8 +51,8 @@ export const pharmacyService = {
     return response.data;
   },
 
-  async getNotifications() {
-    const response = await api.get('/api/notifications/my-notifications');
+  async getNotifications(params = {}) {
+    const response = await api.get('/api/notifications/my-notifications', { params });
     return response.data;
   },
 

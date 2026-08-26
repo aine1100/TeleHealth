@@ -1,8 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Bell, ChevronDown, ClipboardList, LogOut, Menu, Package, Search, Settings, Store } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Bell, ChevronDown, LogOut, Menu, Search, Settings, Store } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { toast } from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { pharmacyService } from '../../services/pharmacyService';
+import getSocket from '../../utils/socket';
 
 const formatRelativeTime = (value) => {
   if (!value) return '';
@@ -57,14 +59,14 @@ const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actio
       >
         <Icon size={17} strokeWidth={1.9} />
         {count > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand-500 px-1 text-[9px] font-bold text-white shadow-sm">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand-500 px-1 text-[9px] font-bold text-white">
             {count > 9 ? '9+' : count}
           </span>
         ) : null}
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-30 mt-2 w-[300px] overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.1)] animate-fade-up sm:w-[320px]">
+        <div className="absolute right-0 z-30 mt-2 w-[320px] overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.1)] animate-fade-up sm:w-[340px]">
           <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
             <p className="text-sm font-bold text-ink-900">{label}</p>
             {count > 0 ? (
@@ -73,7 +75,7 @@ const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actio
               </span>
             ) : null}
           </div>
-          <div className="max-h-72 overflow-y-auto">
+          <div className="max-h-80 overflow-y-auto">
             {items.length ? (
               items.map((item) =>
                 item.to ? (
@@ -87,12 +89,12 @@ const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actio
                     className="block border-b border-ink-100 px-4 py-3 last:border-0 hover:bg-ink-50"
                   >
                     <p className="text-sm font-semibold text-ink-900">{item.title}</p>
-                    <p className="mt-0.5 text-xs text-ink-500">{item.meta}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-ink-500">{item.meta}</p>
                   </Link>
                 ) : (
                   <div key={item.id} className="border-b border-ink-100 px-4 py-3 last:border-0 hover:bg-ink-50">
                     <p className="text-sm font-semibold text-ink-900">{item.title}</p>
-                    <p className="mt-0.5 text-xs text-ink-500">{item.meta}</p>
+                    <p className="mt-0.5 line-clamp-2 text-xs text-ink-500">{item.meta}</p>
                   </div>
                 )
               )
@@ -118,21 +120,20 @@ const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actio
 const ProfileMenu = ({ user, pharmacyName, onLogout }) => {
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
-  const initials = `${user?.firstName?.[0] || 'P'}${user?.lastName?.[0] || 'H'}`.toUpperCase();
+  const initials = pharmacyName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase() || 'PH';
 
   useEffect(() => {
     const onPointerDown = (event) => {
       if (!rootRef.current?.contains(event.target)) setOpen(false);
     };
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
     document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
+    return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
 
   return (
@@ -150,27 +151,24 @@ const ProfileMenu = ({ user, pharmacyName, onLogout }) => {
           {initials}
         </span>
         <span className="hidden min-w-0 text-left md:block">
-          <span className="block max-w-[130px] truncate text-xs font-semibold leading-tight text-ink-900">
-            {user?.firstName} {user?.lastName}
+          <span className="block max-w-[160px] truncate text-xs font-semibold leading-tight text-ink-900">
+            {pharmacyName}
           </span>
-          <span className="block max-w-[130px] truncate text-[10px] leading-tight text-ink-500">
-            Pharmacist
+          <span className="block max-w-[160px] truncate text-[10px] leading-tight text-ink-500">
+            {[user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Pharmacist'}
           </span>
         </span>
-        <ChevronDown
-          size={14}
-          className={`mr-0.5 text-ink-400 transition ${open ? 'rotate-180 text-ink-600' : ''}`}
-        />
+        <ChevronDown size={14} className={`mr-0.5 text-ink-400 transition ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open ? (
         <div className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-2xl border border-ink-200/80 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.1)] animate-fade-up">
           <div className="border-b border-ink-100 bg-ink-50/50 px-4 py-3.5">
-            <p className="text-sm font-bold text-ink-900">
-              {user?.firstName} {user?.lastName}
+            <p className="text-sm font-bold text-ink-900">{pharmacyName}</p>
+            <p className="mt-0.5 truncate text-xs text-ink-500">
+              {[user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Pharmacist'}
             </p>
-            <p className="mt-0.5 truncate text-xs text-ink-500">{user?.email}</p>
-            <p className="mt-1.5 truncate text-[11px] font-semibold text-brand-600">{pharmacyName}</p>
+            {user?.email ? <p className="mt-1 truncate text-[11px] text-ink-400">{user.email}</p> : null}
           </div>
           <div className="p-1.5">
             <Link
@@ -213,25 +211,50 @@ const PharmacyHeader = ({ onMenuClick }) => {
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [notifications, setNotifications] = useState([]);
-  const pharmacyName = user?.pharmacyProfile?.pharmacyName || 'Your pharmacy';
-  const firstName = user?.firstName || 'there';
+  const pharmacyName =
+    user?.pharmacyProfile?.pharmacyName ||
+    [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+    'Your pharmacy';
 
   const unreadCount = notifications.filter((item) => !item.isRead).length;
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     try {
-      const res = await pharmacyService.getNotifications();
+      const res = await pharmacyService.getNotifications({ page: 1, limit: 10 });
       setNotifications(res?.data || []);
     } catch {
       // Keep header quiet if notifications fail
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadNotifications();
     const timer = setInterval(loadNotifications, 60000);
     return () => clearInterval(timer);
-  }, []);
+  }, [loadNotifications]);
+
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    const socket = getSocket();
+    socket.emit('join-user-room', { userId: user._id, role: 'pharmacist' });
+
+    const onNotification = (payload) => {
+      setNotifications((prev) => {
+        if (payload?._id && prev.some((item) => String(item._id) === String(payload._id))) {
+          return prev;
+        }
+        return [{ ...payload, isRead: false }, ...prev].slice(0, 20);
+      });
+      if (payload?.title) {
+        toast(payload.message || payload.title, { icon: '🔔', duration: 4500 });
+      }
+    };
+
+    socket.on('notification', onNotification);
+    return () => {
+      socket.off('notification', onNotification);
+    };
+  }, [user?._id]);
 
   const handleLogout = () => {
     requestLogout(() => navigate('/login'));
@@ -271,9 +294,9 @@ const PharmacyHeader = ({ onMenuClick }) => {
 
         <div className="min-w-0 shrink-0 border-r border-ink-100 pr-4 sm:pr-5">
           <p className="truncate text-[15px] font-bold tracking-tight text-ink-900 sm:text-base">
-            Hello, <span className="text-brand-600">{firstName}</span>
+            <span className="text-brand-600">{pharmacyName}</span>
           </p>
-          <p className="hidden max-w-[180px] truncate text-[11px] text-ink-500 sm:block">{pharmacyName}</p>
+          <p className="hidden truncate text-[11px] text-ink-500 sm:block">Pharmacy desk</p>
         </div>
 
         <form onSubmit={onSearchSubmit} className="relative min-w-0 flex-1">
@@ -291,20 +314,6 @@ const PharmacyHeader = ({ onMenuClick }) => {
         </form>
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <Link
-            to="/pharmacy/inventory"
-            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-ink-200/80 bg-white text-ink-600 transition hover:border-ink-300 hover:bg-ink-50 hover:text-ink-900"
-            title="Inventory"
-          >
-            <Package size={17} strokeWidth={1.9} />
-          </Link>
-          <Link
-            to="/pharmacy/orders"
-            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-ink-200/80 bg-white text-ink-600 transition hover:border-ink-300 hover:bg-ink-50 hover:text-ink-900"
-            title="Orders"
-          >
-            <ClipboardList size={17} strokeWidth={1.9} />
-          </Link>
           <HeaderMenu
             icon={Bell}
             label="Notifications"

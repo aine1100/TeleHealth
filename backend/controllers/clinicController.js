@@ -207,7 +207,9 @@ exports.getClinicAppointments = async (req, res) => {
 
 exports.getDashboardOverview = async (req, res) => {
   try {
-    const overview = await clinicService.getDashboardOverview(req.user._id);
+    const rangeDays =
+      req.query.range === '7d' ? 7 : req.query.range === '90d' ? 90 : Number(req.query.days) || 30;
+    const overview = await clinicService.getDashboardOverview(req.user._id, { rangeDays });
     res.json({ success: true, data: overview });
   } catch (error) {
     res.status(getErrorStatus(error)).json({ success: false, message: error.message });

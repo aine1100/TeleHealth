@@ -2,6 +2,12 @@ const { Notification } = require('../models');
 
 const PLATFORM_URL = process.env.PLATFORM_URL || process.env.FRONTEND_URL || 'http://localhost:3000';
 
+let ioRef = null;
+
+exports.setNotificationIo = (io) => {
+  ioRef = io;
+};
+
 const formatPersonName = (user) => {
   if (!user) return 'Someone';
   return [user.firstName, user.lastName].filter(Boolean).join(' ') || 'Someone';
@@ -10,6 +16,24 @@ const formatPersonName = (user) => {
 const formatDoctorName = (doctor) => {
   const name = formatPersonName(doctor);
   return name.startsWith('Dr.') ? name : `Dr. ${name}`;
+};
+
+const emitToRecipient = (recipientId, notification) => {
+  if (!ioRef || !recipientId || !notification) return;
+  const id = recipientId._id?.toString?.() || recipientId.toString();
+  const payload = {
+    _id: notification._id,
+    type: notification.type,
+    title: notification.title,
+    message: notification.message,
+    actionUrl: notification.actionUrl,
+    actionLabel: notification.actionLabel,
+    priority: notification.priority,
+    isRead: notification.isRead,
+    createdAt: notification.createdAt
+  };
+  ioRef.to(`user-${id}`).emit('notification', payload);
+  ioRef.to(`patient-${id}`).emit('notification', payload);
 };
 
 exports.createNotification = async ({
@@ -25,7 +49,7 @@ exports.createNotification = async ({
 }) => {
   if (!recipientId) return null;
 
-  return Notification.create({
+  const notification = await Notification.create({
     recipient: recipientId,
     type,
     title,
@@ -37,6 +61,23 @@ exports.createNotification = async ({
     actionLabel,
     priority
   });
+
+  emitToRecipient(recipientId, notification);
+
+  try {
+    const pushService = require('./pushService');
+    await pushService.sendToUser(recipientId, {
+      title: notification.title,
+      message: notification.message,
+      actionUrl: notification.actionUrl,
+      tag: `notification-${notification._id}`,
+      data: { notificationId: notification._id, type: notification.type }
+    });
+  } catch {
+    /* push optional */
+  }
+
+  return notification;
 };
 
 exports.notifyAppointmentBooked = async (appointment) => {
@@ -92,13 +133,51 @@ exports.notifyAppointmentCancelled = async (appointment, { cancelledByRole } = {
     await exports.createNotification({
       recipientId: patientId,
       type: 'appointment_cancelled',
-      title: 'Appointment cancelled',
-      message: `Your visit with ${doctorName} was cancelled.${reason}`,
+      title: 'Appointment declined',
+      message: `Your visit with ${doctorName} was declined or cancelled.${reason}`,
       relatedId: appointment._id,
       actionUrl: `${PLATFORM_URL}/patient/appointments`,
-      actionLabel: 'View appointments'
+      actionLabel: 'View appointments',
+      priority: 'high'
     });
   }
+};
+
+exports.notifyAppointmentPostponed = async (appointment) => {
+  const patientId = appointment.patient?._id || appointment.patient;
+  const doctorName = formatDoctorName(appointment.doctor);
+  const when = appointment.postponedTo
+    ? new Date(appointment.postponedTo).toLocaleString()
+    : 'a later time';
+  const reason = appointment.postponedReason ? ` Reason: ${appointment.postponedReason}` : '';
+
+  await exports.createNotification({
+    recipientId: patientId,
+    type: 'appointment_postponed',
+    title: 'Appointment postponed',
+    message: `${doctorName} postponed your visit to ${when}.${reason}`,
+    relatedId: appointment._id,
+    actionUrl: `${PLATFORM_URL}/patient/appointments`,
+    actionLabel: 'View appointment',
+    priority: 'high'
+  });
+};
+
+exports.notifyAppointmentReferred = async (appointment) => {
+  const patientId = appointment.patient?._id || appointment.patient;
+  const doctorName = formatDoctorName(appointment.doctor);
+  const reason = appointment.referral?.reason ? ` Reason: ${appointment.referral.reason}` : '';
+
+  await exports.createNotification({
+    recipientId: patientId,
+    type: 'referral_update',
+    title: 'Appointment referred',
+    message: `${doctorName} referred your visit to another clinician.${reason}`,
+    relatedId: appointment._id,
+    actionUrl: `${PLATFORM_URL}/patient/appointments`,
+    actionLabel: 'View details',
+    priority: 'high'
+  });
 };
 
 exports.notifyPaymentReceived = async (appointment) => {

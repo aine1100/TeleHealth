@@ -179,8 +179,15 @@ exports.payOrder = async (req, res) => {
 
 exports.listOrders = async (req, res) => {
   try {
-    const data = await pharmacyService.listMyOrders(req.user);
-    res.json({ success: true, count: data.length, data });
+    const result = await pharmacyService.listMyOrders(req.user, req.query);
+    res.json({
+      success: true,
+      count: result.data.length,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      data: result.data
+    });
   } catch (error) {
     sendErrorResponse(res, error, { logLabel: 'PharmacyOrder' });
   }

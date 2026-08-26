@@ -7,6 +7,7 @@ export const patientNav = {
     { to: '/patient/pharmacies', label: 'Pharmacies', icon: 'Store' },
     { to: '/patient/orders', label: 'Pharmacy orders', icon: 'ShoppingBag' },
     { to: '/patient/medicines', label: 'Medicine reminders', icon: 'Pill' },
+    { to: '/patient/insurance', label: 'Insurance', icon: 'Shield' },
     { to: '/patient/ai-screening', label: 'AI screening', icon: 'Sparkles' }
   ],
   configurations: [

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Bell,
   ChevronDown,
-  CreditCard,
   LogOut,
   Menu,
   Search,
@@ -13,13 +12,24 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
-import { pharmacyService } from '../../services/pharmacyService';
+import { useCart } from '../../context/CartContext';
+import { patientService } from '../../services/patientService';
+import getSocket from '../../utils/socket';
 
-const pharmacyName = (row) =>
-  row?.displayName ||
-  row?.pharmacyProfile?.pharmacyName ||
-  [row?.firstName, row?.lastName].filter(Boolean).join(' ') ||
-  'Pharmacy';
+const formatRelativeTime = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const diffMs = Date.now() - date.getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString();
+};
 
 const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actionTo, actionLabel, onOpen }) => {
   const [open, setOpen] = useState(false);
@@ -29,8 +39,15 @@ const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actio
     const onPointerDown = (event) => {
       if (!rootRef.current?.contains(event.target)) setOpen(false);
     };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
     document.addEventListener('mousedown', onPointerDown);
-    return () => document.removeEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, []);
 
   return (
@@ -63,40 +80,34 @@ const HeaderMenu = ({ icon: Icon, label, count = 0, items = [], emptyText, actio
           <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
             <p className="text-sm font-bold text-ink-900">{label}</p>
             {count > 0 ? (
-              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-                {count} unpaid
+              <span className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] font-semibold text-brand-600">
+                {count} new
               </span>
             ) : null}
           </div>
           <div className="max-h-80 overflow-y-auto">
             {items.length ? (
-              items.map((item) => (
-                <div key={item.id} className="border-b border-ink-100 px-4 py-3 last:border-0 hover:bg-ink-50">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-ink-900">{item.title}</p>
-                      <p className="mt-0.5 text-xs text-ink-500">{item.meta}</p>
-                    </div>
-                    {item.onPay ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setOpen(false);
-                          item.onPay();
-                        }}
-                        className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-brand-500 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-brand-600"
-                      >
-                        <CreditCard size={12} />
-                        Pay
-                      </button>
-                    ) : (
-                      <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                        Paid
-                      </span>
-                    )}
+              items.map((item) =>
+                item.to ? (
+                  <Link
+                    key={item.id}
+                    to={item.to}
+                    onClick={() => {
+                      setOpen(false);
+                      item.onClick?.();
+                    }}
+                    className="block border-b border-ink-100 px-4 py-3 last:border-0 hover:bg-ink-50"
+                  >
+                    <p className="text-sm font-semibold text-ink-900">{item.title}</p>
+                    <p className="mt-0.5 text-xs text-ink-500">{item.meta}</p>
+                  </Link>
+                ) : (
+                  <div key={item.id} className="border-b border-ink-100 px-4 py-3 last:border-0 hover:bg-ink-50">
+                    <p className="text-sm font-semibold text-ink-900">{item.title}</p>
+                    <p className="mt-0.5 text-xs text-ink-500">{item.meta}</p>
                   </div>
-                </div>
-              ))
+                )
+              )
             ) : (
               <p className="px-4 py-8 text-center text-sm text-ink-500">{emptyText}</p>
             )}
@@ -198,27 +209,50 @@ const ProfileMenu = ({ user, onLogout }) => {
 
 const PatientHeader = ({ onMenuClick }) => {
   const { user, requestLogout } = useAuth();
+  const { itemCount, openCart } = useCart();
   const navigate = useNavigate();
   const [search, setSearch] = useState('');
-  const [orders, setOrders] = useState([]);
+  const [notifications, setNotifications] = useState([]);
   const firstName = user?.firstName || 'there';
+  const unreadCount = notifications.filter((item) => !item.isRead).length;
 
-  const loadOrders = useCallback(async () => {
+  const loadNotifications = useCallback(async () => {
     try {
-      const res = await pharmacyService.getMyOrders();
-      setOrders(res?.data || []);
+      const res = await patientService.getNotifications({ page: 1, limit: 10 });
+      setNotifications(res?.data || []);
     } catch {
       // keep header quiet
     }
   }, []);
 
   useEffect(() => {
-    loadOrders();
-    const timer = setInterval(loadOrders, 60000);
+    loadNotifications();
+    const timer = setInterval(loadNotifications, 60000);
     return () => clearInterval(timer);
-  }, [loadOrders]);
+  }, [loadNotifications]);
 
-  const unpaidOrders = orders.filter((order) => order.payment?.status !== 'paid');
+  useEffect(() => {
+    if (!user?._id) return undefined;
+    const socket = getSocket();
+    socket.emit('join-user-room', { userId: user._id, role: 'patient' });
+
+    const onNotification = (payload) => {
+      setNotifications((prev) => {
+        if (payload?._id && prev.some((item) => String(item._id) === String(payload._id))) {
+          return prev;
+        }
+        return [{ ...payload, isRead: false }, ...prev].slice(0, 50);
+      });
+      if (payload?.title) {
+        toast(payload.message || payload.title, { icon: '🔔', duration: 5000 });
+      }
+    };
+
+    socket.on('notification', onNotification);
+    return () => {
+      socket.off('notification', onNotification);
+    };
+  }, [user?._id]);
 
   const handleLogout = () => {
     requestLogout(() => navigate('/login'));
@@ -231,29 +265,20 @@ const PatientHeader = ({ onMenuClick }) => {
     navigate(`/patient/doctors?q=${encodeURIComponent(q)}`);
   };
 
-  const payQuick = async (order) => {
-    try {
-      await pharmacyService.payOrder(order._id, {
-        method: 'mtn_momo',
-        phoneNumber: user?.phone || '+256700000000'
-      });
-      toast.success('Payment successful — order sent to pharmacy');
-      await loadOrders();
-      navigate('/patient/orders');
-    } catch (error) {
-      toast.error(error?.response?.data?.message || 'Unable to pay order');
-      navigate('/patient/orders');
-    }
-  };
-
-  const orderItems = orders.slice(0, 6).map((order) => ({
-    id: order._id,
-    title: pharmacyName(order.pharmacy),
-    meta: `${order.orderType === 'catalog' ? 'Catalog' : 'Rx'} · UGX ${Number(order.totalAmount || 0).toLocaleString()} · ${
-      order.payment?.status === 'paid' ? 'Paid' : 'Awaiting payment'
-    }`,
-    onPay: order.payment?.status !== 'paid' ? () => payQuick(order) : null
-  }));
+  const notificationItems = notifications.slice(0, 8).map((item) => {
+    const path = item.actionUrl ? item.actionUrl.replace(/^https?:\/\/[^/]+/, '') : '/patient/notifications';
+    return {
+      id: item._id,
+      title: item.title || 'Notification',
+      meta: [item.message, formatRelativeTime(item.createdAt)].filter(Boolean).join(' · '),
+      to: path || '/patient/notifications',
+      onClick: () => {
+        if (!item.isRead) {
+          patientService.markNotificationRead(item._id).then(loadNotifications).catch(() => {});
+        }
+      }
+    };
+  });
 
   return (
     <header className="sticky top-0 z-20 shrink-0 border-b border-ink-200/70 bg-white/90 backdrop-blur-md">
@@ -287,23 +312,29 @@ const PatientHeader = ({ onMenuClick }) => {
         </form>
 
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-          <HeaderMenu
-            icon={ShoppingBag}
-            label="Pharmacy orders"
-            count={unpaidOrders.length}
-            items={orderItems}
-            emptyText="No pharmacy orders yet"
-            actionTo="/patient/orders"
-            actionLabel="View all orders"
-            onOpen={loadOrders}
-          />
+          <button
+            type="button"
+            aria-label="Open cart"
+            title="Cart"
+            onClick={openCart}
+            className="relative flex h-10 w-10 items-center justify-center rounded-full border border-ink-200/80 bg-white text-ink-600 transition hover:border-ink-300 hover:bg-ink-50 hover:text-ink-900"
+          >
+            <ShoppingBag size={17} strokeWidth={1.9} />
+            {itemCount > 0 ? (
+              <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-brand-500 px-1 text-[9px] font-bold text-white">
+                {itemCount > 9 ? '9+' : itemCount}
+              </span>
+            ) : null}
+          </button>
           <HeaderMenu
             icon={Bell}
             label="Notifications"
-            items={[]}
+            count={unreadCount}
+            items={notificationItems}
             emptyText="You're all caught up"
             actionTo="/patient/notifications"
             actionLabel="View all"
+            onOpen={loadNotifications}
           />
           <div className="ml-0.5 h-6 w-px bg-ink-100 sm:ml-1" />
           <ProfileMenu user={user} onLogout={handleLogout} />

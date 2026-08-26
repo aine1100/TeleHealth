@@ -3,8 +3,11 @@ import { createPortal } from 'react-dom';
 import { toast } from 'react-hot-toast';
 import Dropdown from '../../components/auth/Dropdown';
 import DataTable from '../../components/ui/DataTable';
+import ListPagination from '../../components/ui/ListPagination';
 import { orderStatusOptions } from '../../data/pharmacyDashboard';
 import { pharmacyService } from '../../services/pharmacyService';
+
+const PAGE_SIZE = 10;
 
 const statusStyles = {
   pending: 'bg-amber-50 text-amber-700',
@@ -20,6 +23,8 @@ const statusStyles = {
 const PharmacyOrders = () => {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [actingId, setActingId] = useState(null);
   const [selected, setSelected] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all');
@@ -27,19 +32,27 @@ const PharmacyOrders = () => {
   const load = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await pharmacyService.getMyOrders();
+      const params = { page, limit: PAGE_SIZE };
+      if (typeFilter !== 'all') params.orderType = typeFilter;
+      const res = await pharmacyService.getMyOrders(params);
       setOrders(res?.data || []);
+      setTotal(res?.total || 0);
     } catch (error) {
       toast.error(error?.response?.data?.message || 'Unable to load orders');
       setOrders([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, typeFilter]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [typeFilter]);
 
   const updateStatus = async (order, status) => {
     setActingId(order._id);
@@ -73,11 +86,6 @@ const PharmacyOrders = () => {
     }
     return [];
   };
-
-  const rows =
-    typeFilter === 'all'
-      ? orders
-      : orders.filter((order) => (order.orderType || 'prescription') === typeFilter);
 
   const columns = [
     {
@@ -154,7 +162,8 @@ const PharmacyOrders = () => {
         <div>
           <h1 className="text-2xl font-bold text-ink-900">Orders</h1>
           <p className="mt-1 text-sm text-ink-600">
-            Manage catalog purchases and prescription fulfilment for delivery or pickup.
+            Manage catalog purchases and prescription fulfilment for delivery or pickup. Accepting an
+            order reduces catalog stock.
           </p>
         </div>
         <div className="w-full sm:w-48">
@@ -170,13 +179,16 @@ const PharmacyOrders = () => {
         </div>
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={rows}
-        loading={loading}
-        emptyText="No orders yet."
-        onRowClick={setSelected}
-      />
+      <div className="space-y-3">
+        <DataTable
+          columns={columns}
+          rows={orders}
+          loading={loading}
+          emptyText="No orders yet."
+          onRowClick={setSelected}
+        />
+        <ListPagination page={page} limit={PAGE_SIZE} total={total} onPageChange={setPage} />
+      </div>
 
       {selected
         ? createPortal(
