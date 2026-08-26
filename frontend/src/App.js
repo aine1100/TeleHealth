@@ -15,7 +15,6 @@ import ResetPassword from './pages/auth/ResetPassword';
 import DoctorSetup from './pages/auth/DoctorSetup';
 import PendingApproval from './pages/auth/PendingApproval';
 import Landing from './pages/Landing';
-import RoleHome from './pages/RoleHome';
 
 import ClinicLayout from './layouts/ClinicLayout';
 import ClinicOverview from './pages/clinic/ClinicOverview';
