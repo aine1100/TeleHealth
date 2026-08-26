@@ -56,10 +56,11 @@ const PatientWaitingRoom = () => {
   }, [loading, status, joinRoom]);
 
   useEffect(() => {
-    if (!user?._id) return undefined;
+    const userId = user?._id || user?.id;
+    if (!userId) return undefined;
 
     const socket = getSocket();
-    socket.emit('join-user-room', { userId: user._id, role: 'patient' });
+    socket.emit('join-user-room', { userId, role: 'patient' });
 
     const onReady = ({ appointmentId: readyId }) => {
       if (String(readyId) === String(appointmentId)) {
@@ -72,7 +73,7 @@ const PatientWaitingRoom = () => {
     return () => {
       socket.off('consultation-ready', onReady);
     };
-  }, [user?._id, appointmentId, navigate]);
+  }, [user?._id, user?.id, appointmentId, navigate]);
 
   useEffect(() => {
     if (status?.status !== 'in_waiting_room') return undefined;

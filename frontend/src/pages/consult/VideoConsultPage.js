@@ -7,14 +7,19 @@ import { doctorService } from '../../services/doctorService';
 import { patientService } from '../../services/patientService';
 import { getDoctorName, getPatientName } from '../../utils/appointmentCalendar';
 
+const userIdOf = (user) => user?._id || user?.id || null;
+
 const VideoConsultPage = ({ role = 'patient' }) => {
   const { appointmentId } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [appointment, setAppointment] = useState(null);
+  const userId = userIdOf(user);
 
   useEffect(() => {
+    if (authLoading || !userId) return undefined;
+
     let mounted = true;
     const load = async () => {
       try {
@@ -45,7 +50,7 @@ const VideoConsultPage = ({ role = 'patient' }) => {
     return () => {
       mounted = false;
     };
-  }, [appointmentId, role, navigate]);
+  }, [appointmentId, role, navigate, authLoading, userId]);
 
   const backPath = role === 'doctor' ? '/doctor/appointments' : '/patient/appointments';
   const counterpartName =
@@ -63,7 +68,7 @@ const VideoConsultPage = ({ role = 'patient' }) => {
     navigate(backPath);
   }, [navigate, backPath, role, appointmentId]);
 
-  if (loading || !user?._id) {
+  if (authLoading || loading || !userId) {
     return <p className="py-20 text-center text-sm text-ink-500">Loading consultation…</p>;
   }
 
@@ -84,7 +89,7 @@ const VideoConsultPage = ({ role = 'patient' }) => {
       <div className="mt-4">
         <VideoConsultation
           appointmentId={appointmentId}
-          userId={user?._id}
+          userId={userId}
           role={role}
           userName={userName}
           counterpartName={counterpartName}
